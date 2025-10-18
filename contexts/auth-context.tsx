@@ -97,8 +97,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOutUser(): Promise<void> {
-    await signOut();
-    setUser(null);
+    try {
+      console.log('AuthContext: Starting sign out');
+      await signOut();
+      console.log('AuthContext: Sign out successful');
+      setUser(null);
+      console.log('AuthContext: User state cleared');
+    } catch (error) {
+      console.error('AuthContext: Sign out error:', error);
+      // Even if sign out fails, clear local state
+      setUser(null);
+      throw error;
+    }
   }
 
   return (

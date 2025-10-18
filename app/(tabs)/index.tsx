@@ -6,6 +6,7 @@ import {
   Alert,
   ActivityIndicator,
   Text,
+  Modal,
 } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { router } from 'expo-router';
@@ -17,6 +18,8 @@ export default function DirectMessagesScreen() {
   const client = useMemo(() => generateClient<Schema>(), []);
   const [friends, setFriends] = useState<Schema['Friend']['type'][]>([]);
   const [loading, setLoading] = useState(true);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (user?.email) {
@@ -38,18 +41,24 @@ export default function DirectMessagesScreen() {
     }
   }
 
-  async function handleSignOut() {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOutUser();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
+  function handleSignOut() {
+    console.log('handleSignOut: Button pressed, showing modal');
+    setShowSignOutModal(true);
+  }
+
+  async function confirmSignOut() {
+    console.log('confirmSignOut: User confirmed, calling signOutUser');
+    setSigningOut(true);
+    try {
+      await signOutUser();
+      console.log('confirmSignOut: signOutUser completed successfully');
+      setShowSignOutModal(false);
+      // The auth context will update and trigger navigation
+    } catch (error) {
+      console.error('confirmSignOut: Error signing out:', error);
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+      setSigningOut(false);
+    }
   }
 
   function openChat(friendEmail: string) {
@@ -140,6 +149,55 @@ export default function DirectMessagesScreen() {
           </View>
         }
       />
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal
+        visible={showSignOutModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => !signingOut && setShowSignOutModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center px-8">
+          <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
+            <Text className="text-2xl font-bold text-gray-900 mb-3">
+              Sign Out
+            </Text>
+            <Text className="text-gray-600 text-base mb-6">
+              Are you sure you want to sign out?
+            </Text>
+
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                className="flex-1 bg-gray-100 py-4 rounded-2xl active:opacity-70"
+                onPress={() => {
+                  console.log('User cancelled sign out');
+                  setShowSignOutModal(false);
+                }}
+                disabled={signingOut}
+              >
+                <Text className="text-gray-700 text-center text-base font-semibold">
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className={`flex-1 bg-red-500 py-4 rounded-2xl active:opacity-70 ${
+                  signingOut ? 'opacity-60' : ''
+                }`}
+                onPress={confirmSignOut}
+                disabled={signingOut}
+              >
+                {signingOut ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-white text-center text-base font-semibold">
+                    Sign Out
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

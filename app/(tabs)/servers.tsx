@@ -70,6 +70,17 @@ export default function ServersScreen() {
           createdAt: new Date().toISOString(),
         });
         generalServer = newServer;
+
+        // Create general channel for the general server
+        if (generalServer) {
+          await client.models.Channel.create({
+            serverId: generalServer.id,
+            name: 'general',
+            isGeneral: true,
+            createdAt: new Date().toISOString(),
+            createdBy: 'system@app.com',
+          });
+        }
       }
 
       // Ensure current user is a member of the general server
@@ -117,6 +128,15 @@ export default function ServersScreen() {
           serverId: newServer.id,
           userEmail: user?.email || '',
           joinedAt: new Date().toISOString(),
+        });
+
+        // Create general channel for the new server
+        await client.models.Channel.create({
+          serverId: newServer.id,
+          name: 'general',
+          isGeneral: true,
+          createdAt: new Date().toISOString(),
+          createdBy: user?.email || '',
         });
       }
 

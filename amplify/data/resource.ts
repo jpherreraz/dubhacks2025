@@ -45,12 +45,24 @@ const schema = a.schema({
       serverId: a.string().required(),
       userEmail: a.string().required(),
       joinedAt: a.datetime().required(),
+      isAdmin: a.boolean().default(false),
+    })
+    .authorization((allow) => [allow.authenticated()]),
+
+  Channel: a
+    .model({
+      serverId: a.string().required(),
+      name: a.string().required(),
+      isGeneral: a.boolean().default(false),
+      createdAt: a.datetime().required(),
+      createdBy: a.string(),
     })
     .authorization((allow) => [allow.authenticated()]),
 
   ServerMessage: a
     .model({
       serverId: a.string().required(),
+      channelId: a.string().required(),
       senderEmail: a.string().required(),
       content: a.string().required(),
       createdAt: a.datetime().required(),

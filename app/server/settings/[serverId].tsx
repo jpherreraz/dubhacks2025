@@ -28,15 +28,26 @@ export default function ServerSettingsScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [adding, setAdding] = useState(false);
+  const [server, setServer] = useState<Schema['Server']['type'] | null>(null);
 
   const isOwner = user?.email === ownerEmail;
 
   useEffect(() => {
     if (user?.email && serverId) {
+      fetchServer();
       fetchMembers();
       fetchFriends();
     }
   }, [user?.email, serverId]);
+
+  async function fetchServer() {
+    try {
+      const { data: serverData } = await client.models.Server.get({ id: serverId });
+      setServer(serverData);
+    } catch (error) {
+      console.error('Error fetching server:', error);
+    }
+  }
 
   async function fetchMembers() {
     try {
@@ -127,37 +138,129 @@ export default function ServerSettingsScreen() {
     );
   }
 
+  async function handleToggleAdmin(member: Schema['ServerMember']['type']) {
+    if (member.userEmail === ownerEmail) {
+      Alert.alert('Error', 'Cannot change owner admin status');
+      return;
+    }
+
+    try {
+      await client.models.ServerMember.update({
+        id: member.id,
+        isAdmin: !member.isAdmin,
+      });
+      await fetchMembers();
+      Alert.alert(
+        'Success',
+        member.isAdmin ? 'Admin status removed' : 'Admin status granted'
+      );
+    } catch (error) {
+      console.error('Error toggling admin:', error);
+      Alert.alert('Error', 'Failed to update admin status');
+    }
+  }
+
+  async function handleTransferOwnership(newOwnerEmail: string) {
+    Alert.alert(
+      'Transfer Ownership',
+      `Are you sure you want to transfer ownership to ${newOwnerEmail.split('@')[0]}? You will no longer be the owner.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Transfer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!server) return;
+
+              // Update server owner
+              await client.models.Server.update({
+                id: serverId,
+                ownerEmail: newOwnerEmail,
+              });
+
+              Alert.alert(
+                'Success',
+                'Ownership transferred. Returning to server...',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => router.back(),
+                  },
+                ]
+              );
+            } catch (error) {
+              console.error('Error transferring ownership:', error);
+              Alert.alert('Error', 'Failed to transfer ownership');
+            }
+          },
+        },
+      ]
+    );
+  }
+
   function renderMember({ item }: { item: Schema['ServerMember']['type'] }) {
     const displayName = item.userEmail.split('@')[0];
     const isMemberOwner = item.userEmail === ownerEmail;
 
     return (
-      <View className="flex-row items-center bg-white rounded-2xl p-4 mb-3 shadow-sm">
-        <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center mr-4">
-          <Text className="text-white text-xl font-bold">
-            {displayName.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        <View className="flex-1">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-gray-900 text-base font-semibold">
-              {displayName}
+      <View className="bg-white rounded-2xl p-4 mb-3 shadow-sm">
+        <View className="flex-row items-center mb-3">
+          <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center mr-4">
+            <Text className="text-white text-xl font-bold">
+              {displayName.charAt(0).toUpperCase()}
             </Text>
-            {isMemberOwner && (
-              <View className="bg-amber-100 px-2 py-0.5 rounded-md">
-                <Text className="text-amber-700 text-xs font-semibold">Owner</Text>
-              </View>
-            )}
           </View>
-          <Text className="text-gray-500 text-sm mt-0.5">{item.userEmail}</Text>
+          <View className="flex-1">
+            <View className="flex-row items-center gap-2 flex-wrap">
+              <Text className="text-gray-900 text-base font-semibold">
+                {displayName}
+              </Text>
+              {isMemberOwner && (
+                <View className="bg-amber-100 px-2 py-0.5 rounded-md">
+                  <Text className="text-amber-700 text-xs font-semibold">Owner</Text>
+                </View>
+              )}
+              {!isMemberOwner && item.isAdmin && (
+                <View className="bg-purple-100 px-2 py-0.5 rounded-md">
+                  <Text className="text-purple-700 text-xs font-semibold">Admin</Text>
+                </View>
+              )}
+            </View>
+            <Text className="text-gray-500 text-sm mt-0.5">{item.userEmail}</Text>
+          </View>
         </View>
         {isOwner && !isMemberOwner && (
-          <TouchableOpacity
-            className="bg-red-50 px-4 py-2 rounded-xl active:opacity-70"
-            onPress={() => handleRemoveMember(item.id, item.userEmail)}
-          >
-            <Text className="text-red-600 text-sm font-semibold">Remove</Text>
-          </TouchableOpacity>
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              className={`flex-1 ${
+                item.isAdmin ? 'bg-gray-100' : 'bg-purple-50'
+              } px-4 py-2.5 rounded-xl active:opacity-70`}
+              onPress={() => handleToggleAdmin(item)}
+            >
+              <Text
+                className={`${
+                  item.isAdmin ? 'text-gray-700' : 'text-purple-700'
+                } text-sm font-semibold text-center`}
+              >
+                {item.isAdmin ? 'Remove Admin' : 'Make Admin'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="flex-1 bg-blue-50 px-4 py-2.5 rounded-xl active:opacity-70"
+              onPress={() => handleTransferOwnership(item.userEmail)}
+            >
+              <Text className="text-blue-700 text-sm font-semibold text-center">
+                Transfer Ownership
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="bg-red-50 px-4 py-2.5 rounded-xl active:opacity-70"
+              onPress={() => handleRemoveMember(item.id, item.userEmail)}
+            >
+              <Text className="text-red-600 text-sm font-semibold">Remove</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     );

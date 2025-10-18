@@ -8,6 +8,7 @@ import {
   Platform,
   Text,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -24,18 +25,34 @@ export default function ServerChatScreen() {
   const client = useMemo(() => generateClient<Schema>(), []);
   const isOwner = user?.email === ownerEmail;
   const [messages, setMessages] = useState<Schema['ServerMessage']['type'][]>([]);
+  const [members, setMembers] = useState<Schema['ServerMember']['type'][]>([]);
+  const [channels, setChannels] = useState<Schema['Channel']['type'][]>([]);
+  const [activeChannel, setActiveChannel] = useState<Schema['Channel']['type'] | null>(null);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // Check if user is admin
+  const userMember = members.find((m) => m.userEmail === user?.email);
+  const isAdmin = userMember?.isAdmin || false;
+  const canManageChannels = isOwner || isAdmin;
 
   useEffect(() => {
     if (user?.email && serverId) {
+      fetchChannels();
+      fetchMembers();
+    }
+  }, [user?.email, serverId]);
+
+  useEffect(() => {
+    if (activeChannel) {
       fetchMessages();
 
-      // Subscribe to new messages
+      // Subscribe to new messages for active channel
       const subscription = client.models.ServerMessage.observeQuery({
         filter: {
-          serverId: { eq: serverId },
+          channelId: { eq: activeChannel.id },
         },
       }).subscribe({
         next: ({ items }) => {
@@ -48,37 +65,85 @@ export default function ServerChatScreen() {
 
       return () => subscription.unsubscribe();
     }
-  }, [user?.email, serverId]);
+  }, [activeChannel]);
 
-  async function fetchMessages() {
+  async function fetchMembers() {
+    try {
+      const { data: allMembers } = await client.models.ServerMember.list();
+      const serverMembers = allMembers.filter(
+        (m) => m !== null && m.serverId === serverId
+      );
+      setMembers(serverMembers);
+    } catch (error) {
+      console.error('Error fetching members:', error);
+    }
+  }
+
+  async function fetchChannels() {
     try {
       setLoading(true);
+      const { data: allChannels } = await client.models.Channel.list();
+      const serverChannels = allChannels.filter(
+        (ch) => ch !== null && ch.serverId === serverId
+      );
+
+      // Sort channels with general first
+      const sortedChannels = serverChannels.sort((a, b) => {
+        if (a.isGeneral) return -1;
+        if (b.isGeneral) return 1;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
+      setChannels(sortedChannels);
+
+      // Set active channel to general by default
+      const generalChannel = sortedChannels.find((ch) => ch.isGeneral);
+      if (generalChannel) {
+        setActiveChannel(generalChannel);
+      } else if (sortedChannels.length > 0) {
+        setActiveChannel(sortedChannels[0]);
+      }
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchMessages() {
+    if (!activeChannel) return;
+
+    try {
       const { data: allMessages } = await client.models.ServerMessage.list();
 
-      // Filter messages for this server
-      const serverMessages = allMessages.filter(
-        (msg) => msg !== null && msg.serverId === serverId
+      // Filter messages for this channel
+      const channelMessages = allMessages.filter(
+        (msg) => msg !== null && msg.channelId === activeChannel.id
       );
 
       // Sort by timestamp
-      const sortedMessages = serverMessages.sort(
+      const sortedMessages = channelMessages.sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
       setMessages(sortedMessages);
     } catch (error) {
       console.error('Error fetching messages:', error);
-    } finally {
-      setLoading(false);
     }
   }
 
+  function switchChannel(channel: Schema['Channel']['type']) {
+    setActiveChannel(channel);
+    setShowSidebar(false);
+  }
+
   async function sendMessage() {
-    if (!inputText.trim() || !user?.email || !serverId) return;
+    if (!inputText.trim() || !user?.email || !serverId || !activeChannel) return;
 
     try {
       await client.models.ServerMessage.create({
         serverId: serverId,
+        channelId: activeChannel.id,
         senderEmail: user.email,
         content: inputText.trim(),
         createdAt: new Date().toISOString(),
@@ -98,13 +163,28 @@ export default function ServerChatScreen() {
   function renderMessage({ item }: { item: Schema['ServerMessage']['type'] }) {
     const isUser = item.senderEmail === user?.email;
     const senderName = item.senderEmail.split('@')[0];
+    const isSenderOwner = item.senderEmail === ownerEmail;
+    const senderMember = members.find((m) => m.userEmail === item.senderEmail);
+    const isSenderAdmin = senderMember?.isAdmin && !isSenderOwner;
 
     return (
       <View className="mb-3 px-4">
         {!isUser && (
-          <Text className="text-xs font-semibold text-gray-600 mb-1 ml-1">
-            {senderName}
-          </Text>
+          <View className="flex-row items-center mb-1 ml-1 gap-2">
+            <Text className="text-xs font-semibold text-gray-600">
+              {senderName}
+            </Text>
+            {isSenderOwner && (
+              <View className="bg-amber-100 px-2 py-0.5 rounded-md">
+                <Text className="text-amber-700 text-[10px] font-semibold">Owner</Text>
+              </View>
+            )}
+            {isSenderAdmin && (
+              <View className="bg-purple-100 px-2 py-0.5 rounded-md">
+                <Text className="text-purple-700 text-[10px] font-semibold">Admin</Text>
+              </View>
+            )}
+          </View>
         )}
         <View className={`${isUser ? 'items-end' : 'items-start'}`}>
           <View
@@ -165,16 +245,21 @@ export default function ServerChatScreen() {
           >
             <Text className="text-blue-500 text-3xl font-light">‹</Text>
           </TouchableOpacity>
-          <View className="w-10 h-10 rounded-2xl bg-purple-500 items-center justify-center mr-3 shadow-sm">
-            <Text className="text-white text-base font-bold">
-              {serverName?.charAt(0).toUpperCase() || 'S'}
-            </Text>
-          </View>
+          <TouchableOpacity
+            className="mr-3 active:opacity-70"
+            onPress={() => setShowSidebar(true)}
+          >
+            <View className="w-10 h-10 rounded-2xl bg-purple-500 items-center justify-center shadow-sm">
+              <Text className="text-white text-base font-bold">#</Text>
+            </View>
+          </TouchableOpacity>
           <View className="flex-1">
             <Text className="text-lg font-semibold text-gray-900">
               {serverName || 'Server'}
             </Text>
-            <Text className="text-xs text-gray-500">Server Chat</Text>
+            <Text className="text-xs text-gray-500">
+              #{activeChannel?.name || 'general'}
+            </Text>
           </View>
           {isOwner && (
             <TouchableOpacity
@@ -242,6 +327,106 @@ export default function ServerChatScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Channel Sidebar Modal */}
+      <Modal
+        visible={showSidebar}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSidebar(false)}
+      >
+        <View className="flex-1 bg-black/50">
+          <TouchableOpacity
+            className="flex-1"
+            activeOpacity={1}
+            onPress={() => setShowSidebar(false)}
+          />
+          <View className="bg-white rounded-t-3xl max-h-[70%]">
+            <View className="px-6 pt-6 pb-4 border-b border-gray-100">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-2xl font-bold text-gray-900">Channels</Text>
+                <TouchableOpacity
+                  className="active:opacity-70"
+                  onPress={() => setShowSidebar(false)}
+                >
+                  <Text className="text-gray-500 text-2xl">✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Text className="text-gray-500 text-sm">
+                {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
+              </Text>
+            </View>
+
+            <FlatList
+              data={channels}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  className={`flex-row items-center p-4 rounded-2xl mb-2 ${
+                    activeChannel?.id === item.id
+                      ? 'bg-purple-500'
+                      : 'bg-gray-50'
+                  } active:opacity-70`}
+                  onPress={() => switchChannel(item)}
+                >
+                  <View className="flex-1 flex-row items-center gap-2">
+                    <Text
+                      className={`text-lg font-semibold ${
+                        activeChannel?.id === item.id
+                          ? 'text-white'
+                          : 'text-gray-900'
+                      }`}
+                    >
+                      # {item.name}
+                    </Text>
+                    {item.isGeneral && (
+                      <View
+                        className={`px-2 py-0.5 rounded-md ${
+                          activeChannel?.id === item.id
+                            ? 'bg-white/20'
+                            : 'bg-blue-100'
+                        }`}
+                      >
+                        <Text
+                          className={`text-xs font-semibold ${
+                            activeChannel?.id === item.id
+                              ? 'text-white'
+                              : 'text-blue-700'
+                          }`}
+                        >
+                          General
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {activeChannel?.id === item.id && (
+                    <Text className="text-white text-xl">✓</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              ListFooterComponent={
+                canManageChannels ? (
+                  <TouchableOpacity
+                    className="flex-row items-center justify-center p-4 rounded-2xl bg-green-50 active:opacity-70 mt-2"
+                    onPress={() => {
+                      setShowSidebar(false);
+                      router.push({
+                        pathname: '/server/channels/[serverId]',
+                        params: { serverId, serverName, ownerEmail },
+                      });
+                    }}
+                  >
+                    <Text className="text-green-700 text-base font-semibold">
+                      + Create New Channel
+                    </Text>
+                  </TouchableOpacity>
+                ) : null
+              }
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
