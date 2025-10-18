@@ -3,13 +3,12 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Text,
+  ActivityIndicator,
 } from 'react-native';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/auth-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { generateClient } from 'aws-amplify/data';
@@ -124,55 +123,74 @@ export default function ChatScreen() {
     const isUser = item.senderEmail === user?.email;
 
     return (
-      <View
-        style={[
-          styles.messageContainer,
-          isUser ? styles.userMessage : styles.otherMessage,
-        ]}
-      >
+      <View className={`mb-2 px-4 ${isUser ? 'items-end' : 'items-start'}`}>
         <View
-          style={[
-            styles.messageBubble,
-            isUser ? styles.userBubble : styles.otherBubble,
-          ]}
+          className={`max-w-[75%] px-4 py-3 rounded-3xl ${
+            isUser
+              ? 'bg-blue-500 rounded-br-md'
+              : 'bg-gray-200 rounded-bl-md'
+          }`}
         >
-          <ThemedText style={isUser ? styles.userText : styles.otherText}>
+          <Text className={`text-base ${isUser ? 'text-white' : 'text-gray-900'}`}>
             {item.content}
-          </ThemedText>
-          <ThemedText style={styles.timestamp}>
-            {new Date(item.createdAt).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </ThemedText>
+          </Text>
+        </View>
+        <Text className="text-xs text-gray-500 mt-1 px-2">
+          {new Date(item.createdAt).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View className="flex-1 bg-gray-50">
+        <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100 flex-row items-center">
+          <TouchableOpacity
+            className="mr-4 active:opacity-70"
+            onPress={() => router.back()}
+          >
+            <Text className="text-blue-500 text-3xl">‹</Text>
+          </TouchableOpacity>
+          <Text className="text-xl font-bold text-gray-900">
+            {friendEmail || 'Unknown'}
+          </Text>
+        </View>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#3B82F6" />
         </View>
       </View>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <KeyboardAvoidingView
+      className="flex-1 bg-gray-50"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ThemedText style={styles.backButtonText}>‹ Back</ThemedText>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <View style={styles.avatar}>
-            <ThemedText style={styles.avatarText}>
+      <View className="pt-16 px-4 pb-4 bg-white border-b border-gray-100">
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            className="mr-3 active:opacity-70"
+            onPress={() => router.back()}
+          >
+            <Text className="text-blue-500 text-3xl font-light">‹</Text>
+          </TouchableOpacity>
+          <View className="w-10 h-10 rounded-full bg-blue-500 items-center justify-center mr-3 shadow-sm">
+            <Text className="text-white text-base font-bold">
               {friendEmail?.charAt(0).toUpperCase() || '?'}
-            </ThemedText>
+            </Text>
           </View>
-          <View>
-            <ThemedText style={styles.headerTitle}>
+          <View className="flex-1">
+            <Text className="text-lg font-semibold text-gray-900">
               {friendEmail || 'Unknown'}
-            </ThemedText>
-            <ThemedText style={styles.headerSubtitle}>
-              Direct Message
-            </ThemedText>
+            </Text>
+            <Text className="text-xs text-gray-500">Direct Message</Text>
           </View>
         </View>
       </View>
@@ -183,179 +201,50 @@ export default function ChatScreen() {
         data={messages}
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messagesList}
+        contentContainerStyle={{ paddingVertical: 16, flexGrow: 1 }}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
-          loading ? null : (
-            <View style={styles.emptyContainer}>
-              <ThemedText style={styles.emptyText}>
-                No messages yet. Start a conversation with {friendEmail}!
-              </ThemedText>
+          <View className="flex-1 items-center justify-center px-8">
+            <View className="bg-blue-50 w-20 h-20 rounded-full items-center justify-center mb-4">
+              <Text className="text-4xl">💬</Text>
             </View>
-          )
+            <Text className="text-gray-900 text-lg font-semibold mb-2">
+              Start a conversation
+            </Text>
+            <Text className="text-gray-500 text-center text-sm">
+              Send a message to {friendEmail?.split('@')[0]}!
+            </Text>
+          </View>
         }
       />
 
       {/* Input Area */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor="#999"
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={500}
-            onSubmitEditing={sendMessage}
-            blurOnSubmit={false}
-          />
+      <View className="px-4 py-3 bg-white border-t border-gray-200">
+        <View className="flex-row items-end">
+          <View className="flex-1 bg-gray-100 rounded-3xl px-5 py-2 mr-2">
+            <TextInput
+              className="text-base max-h-24 min-h-[36px]"
+              placeholder="Message..."
+              placeholderTextColor="#999"
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={500}
+              onSubmitEditing={sendMessage}
+              blurOnSubmit={false}
+            />
+          </View>
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              !inputText.trim() && styles.sendButtonDisabled,
-            ]}
+            className={`w-9 h-9 rounded-full items-center justify-center mb-1 ${
+              inputText.trim() ? 'bg-blue-500' : 'bg-gray-300'
+            } active:opacity-70`}
             onPress={sendMessage}
             disabled={!inputText.trim()}
           >
-            <ThemedText style={styles.sendButtonText}>Send</ThemedText>
+            <Text className="text-white text-lg font-bold">↑</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </ThemedView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    paddingTop: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    marginRight: 12,
-  },
-  backButtonText: {
-    fontSize: 28,
-    color: '#007AFF',
-  },
-  headerCenter: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    opacity: 0.6,
-    marginTop: 2,
-  },
-  messagesList: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    opacity: 0.5,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  messageContainer: {
-    marginBottom: 12,
-    maxWidth: '80%',
-  },
-  userMessage: {
-    alignSelf: 'flex-end',
-  },
-  otherMessage: {
-    alignSelf: 'flex-start',
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 16,
-  },
-  userBubble: {
-    backgroundColor: '#007AFF',
-  },
-  otherBubble: {
-    backgroundColor: '#E5E5EA',
-  },
-  userText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  otherText: {
-    color: '#000',
-    fontSize: 16,
-  },
-  timestamp: {
-    fontSize: 10,
-    opacity: 0.7,
-    marginTop: 4,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: '#fff',
-    alignItems: 'flex-end',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
-    maxHeight: 100,
-    marginRight: 8,
-  },
-  sendButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#cccccc',
-  },
-  sendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

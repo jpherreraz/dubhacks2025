@@ -3,13 +3,12 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   FlatList,
   Alert,
   ActivityIndicator,
+  Text,
+  ScrollView,
 } from 'react-native';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/auth-context';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
@@ -29,7 +28,6 @@ export default function FriendsScreen() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    console.log('FriendsScreen mounted, user:', user);
     if (user?.email) {
       fetchData();
     }
@@ -48,14 +46,9 @@ export default function FriendsScreen() {
   async function fetchFriends() {
     try {
       const { data: friendsList } = await client.models.Friend.list();
-      console.log('All friends from DB:', friendsList);
-      console.log('Current user email:', user?.email);
-
-      // Only show friends where the current user is the owner
       const myFriends = friendsList.filter(
         (item) => item !== null && item.userEmail === user?.email
       );
-      console.log('My friends after filter:', myFriends);
       setFriends(myFriends);
     } catch (error) {
       console.error('Error fetching friends:', error);
@@ -65,23 +58,13 @@ export default function FriendsScreen() {
   async function fetchRequests() {
     try {
       const { data: allRequests } = await client.models.FriendRequest.list();
-      console.log('All friend requests:', allRequests);
-      console.log('Current user email:', user?.email);
-
-      // Filter out null values and separate sent and received requests
       const validRequests = allRequests.filter((req) => req !== null);
-      console.log('Valid requests:', validRequests);
-
       const sent = validRequests.filter(
         (req) => req.senderEmail === user?.email && req.status === 'PENDING'
       );
       const received = validRequests.filter(
         (req) => req.receiverEmail === user?.email && req.status === 'PENDING'
       );
-
-      console.log('Sent requests:', sent);
-      console.log('Received requests:', received);
-
       setSentRequests(sent);
       setReceivedRequests(received);
     } catch (error) {
@@ -106,13 +89,11 @@ export default function FriendsScreen() {
       return;
     }
 
-    // Check if already friends
     if (friends.some((f) => f.friendEmail.toLowerCase() === friendEmail.toLowerCase())) {
       Alert.alert('Error', 'You are already friends with this person');
       return;
     }
 
-    // Check if request already sent
     if (sentRequests.some((r) => r.receiverEmail.toLowerCase() === friendEmail.toLowerCase())) {
       Alert.alert('Error', 'Friend request already sent');
       return;
@@ -143,13 +124,11 @@ export default function FriendsScreen() {
 
   async function handleAcceptRequest(request: Schema['FriendRequest']['type']) {
     try {
-      // Update request status
       await client.models.FriendRequest.update({
         id: request.id,
         status: 'ACCEPTED',
       });
 
-      // Create friendship for both users
       const now = new Date().toISOString();
       await Promise.all([
         client.models.Friend.create({
@@ -164,7 +143,6 @@ export default function FriendsScreen() {
         }),
       ]);
 
-      // Refresh data
       await fetchData();
       Alert.alert('Success', `You are now friends with ${request.senderEmail}!`);
     } catch (error) {
@@ -179,9 +157,7 @@ export default function FriendsScreen() {
         id: request.id,
         status: 'REJECTED',
       });
-
       setReceivedRequests((prev) => prev.filter((r) => r.id !== request.id));
-      Alert.alert('Request rejected');
     } catch (error) {
       console.error('Error rejecting request:', error);
       Alert.alert('Error', 'Failed to reject request');
@@ -222,59 +198,61 @@ export default function FriendsScreen() {
   }
 
   function renderFriend({ item }: { item: Schema['Friend']['type'] }) {
+    const initial = item.friendEmail.charAt(0).toUpperCase();
+    const colors = ['bg-blue-500', 'bg-purple-500', 'bg-pink-500', 'bg-green-500', 'bg-indigo-500'];
+    const colorIndex = item.friendEmail.charCodeAt(0) % colors.length;
+
     return (
-      <View style={styles.listItem}>
-        <View style={styles.itemInfo}>
-          <View style={styles.avatar}>
-            <ThemedText style={styles.avatarText}>
-              {item.friendEmail.charAt(0).toUpperCase()}
-            </ThemedText>
+      <View className="flex-row items-center justify-between bg-white rounded-2xl p-4 mb-3 shadow-sm">
+        <View className="flex-row items-center flex-1">
+          <View className={`w-12 h-12 rounded-full ${colors[colorIndex]} items-center justify-center mr-3 shadow-md`}>
+            <Text className="text-white text-lg font-bold">{initial}</Text>
           </View>
-          <View style={styles.itemDetails}>
-            <ThemedText style={styles.itemEmail}>{item.friendEmail}</ThemedText>
-            <ThemedText style={styles.itemDate}>
+          <View className="flex-1">
+            <Text className="text-gray-900 text-base font-semibold">{item.friendEmail}</Text>
+            <Text className="text-gray-500 text-xs mt-0.5">
               Friends since {new Date(item.addedAt).toLocaleDateString()}
-            </ThemedText>
+            </Text>
           </View>
         </View>
         <TouchableOpacity
-          style={styles.removeButton}
+          className="bg-red-100 px-4 py-2 rounded-xl active:opacity-70"
           onPress={() => handleRemoveFriend(item)}
         >
-          <ThemedText style={styles.removeButtonText}>Remove</ThemedText>
+          <Text className="text-red-600 text-sm font-semibold">Remove</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   function renderReceivedRequest({ item }: { item: Schema['FriendRequest']['type'] }) {
+    const initial = item.senderEmail.charAt(0).toUpperCase();
+
     return (
-      <View style={styles.listItem}>
-        <View style={styles.itemInfo}>
-          <View style={styles.avatar}>
-            <ThemedText style={styles.avatarText}>
-              {item.senderEmail.charAt(0).toUpperCase()}
-            </ThemedText>
+      <View className="bg-white rounded-2xl p-4 mb-3 shadow-sm">
+        <View className="flex-row items-center mb-3">
+          <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center mr-3 shadow-md">
+            <Text className="text-white text-lg font-bold">{initial}</Text>
           </View>
-          <View style={styles.itemDetails}>
-            <ThemedText style={styles.itemEmail}>{item.senderEmail}</ThemedText>
-            <ThemedText style={styles.itemDate}>
+          <View className="flex-1">
+            <Text className="text-gray-900 text-base font-semibold">{item.senderEmail}</Text>
+            <Text className="text-gray-500 text-xs mt-0.5">
               Sent {new Date(item.createdAt).toLocaleDateString()}
-            </ThemedText>
+            </Text>
           </View>
         </View>
-        <View style={styles.requestButtons}>
+        <View className="flex-row gap-2">
           <TouchableOpacity
-            style={styles.acceptButton}
+            className="flex-1 bg-green-500 py-3 rounded-xl active:opacity-70"
             onPress={() => handleAcceptRequest(item)}
           >
-            <ThemedText style={styles.acceptButtonText}>Accept</ThemedText>
+            <Text className="text-white text-sm font-semibold text-center">Accept</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.rejectButton}
+            className="flex-1 bg-gray-200 py-3 rounded-xl active:opacity-70"
             onPress={() => handleRejectRequest(item)}
           >
-            <ThemedText style={styles.rejectButtonText}>Reject</ThemedText>
+            <Text className="text-gray-700 text-sm font-semibold text-center">Decline</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -282,24 +260,24 @@ export default function FriendsScreen() {
   }
 
   function renderSentRequest({ item }: { item: Schema['FriendRequest']['type'] }) {
+    const initial = item.receiverEmail.charAt(0).toUpperCase();
+
     return (
-      <View style={styles.listItem}>
-        <View style={styles.itemInfo}>
-          <View style={styles.avatar}>
-            <ThemedText style={styles.avatarText}>
-              {item.receiverEmail.charAt(0).toUpperCase()}
-            </ThemedText>
+      <View className="flex-row items-center justify-between bg-white rounded-2xl p-4 mb-3 shadow-sm">
+        <View className="flex-row items-center flex-1">
+          <View className="w-12 h-12 rounded-full bg-gray-400 items-center justify-center mr-3 shadow-md">
+            <Text className="text-white text-lg font-bold">{initial}</Text>
           </View>
-          <View style={styles.itemDetails}>
-            <ThemedText style={styles.itemEmail}>{item.receiverEmail}</ThemedText>
-            <ThemedText style={styles.itemDate}>Pending</ThemedText>
+          <View className="flex-1">
+            <Text className="text-gray-900 text-base font-semibold">{item.receiverEmail}</Text>
+            <Text className="text-amber-600 text-xs mt-0.5 font-medium">Pending</Text>
           </View>
         </View>
         <TouchableOpacity
-          style={styles.cancelButton}
+          className="bg-orange-100 px-4 py-2 rounded-xl active:opacity-70"
           onPress={() => handleCancelRequest(item)}
         >
-          <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
+          <Text className="text-orange-600 text-sm font-semibold">Cancel</Text>
         </TouchableOpacity>
       </View>
     );
@@ -307,53 +285,45 @@ export default function FriendsScreen() {
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.headerTitle}>
-            Friends
-          </ThemedText>
+      <View className="flex-1 bg-gray-50">
+        <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+          <Text className="text-3xl font-bold text-gray-900">Friends</Text>
         </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#3B82F6" />
         </View>
-      </ThemedView>
+      </View>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <View className="flex-1 bg-gray-50">
       {/* Header */}
-      <View style={styles.header}>
-        <ThemedText type="title" style={styles.headerTitle}>
-          Friends
-        </ThemedText>
-        <ThemedText style={styles.headerSubtitle}>
+      <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+        <Text className="text-3xl font-bold text-gray-900 mb-1">Friends</Text>
+        <Text className="text-gray-500 text-sm">
           {friends.length} {friends.length === 1 ? 'friend' : 'friends'}
-          {receivedRequests.length > 0 && ` • ${receivedRequests.length} pending`}
-        </ThemedText>
+          {receivedRequests.length > 0 && ` • ${receivedRequests.length} new ${receivedRequests.length === 1 ? 'request' : 'requests'}`}
+        </Text>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <View className="flex-row bg-white border-b border-gray-100">
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
+          className={`flex-1 py-4 ${activeTab === 'friends' ? 'border-b-2 border-blue-500' : ''}`}
           onPress={() => setActiveTab('friends')}
         >
-          <ThemedText
-            style={[styles.tabText, activeTab === 'friends' && styles.activeTabText]}
-          >
+          <Text className={`text-center font-semibold ${activeTab === 'friends' ? 'text-blue-500' : 'text-gray-500'}`}>
             Friends ({friends.length})
-          </ThemedText>
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
+          className={`flex-1 py-4 ${activeTab === 'requests' ? 'border-b-2 border-blue-500' : ''}`}
           onPress={() => setActiveTab('requests')}
         >
-          <ThemedText
-            style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}
-          >
+          <Text className={`text-center font-semibold ${activeTab === 'requests' ? 'text-blue-500' : 'text-gray-500'}`}>
             Requests ({receivedRequests.length + sentRequests.length})
-          </ThemedText>
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -361,62 +331,50 @@ export default function FriendsScreen() {
       {activeTab === 'friends' && (
         <>
           {showAddFriend ? (
-            <View style={styles.addFriendContainer}>
-              <ThemedText style={styles.addFriendLabel}>
-                Enter friend's email
-              </ThemedText>
-              <View style={styles.addFriendInput}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="friend@example.com"
-                  placeholderTextColor="#999"
-                  value={friendEmail}
-                  onChangeText={setFriendEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoFocus
-                  editable={!sending}
-                />
-              </View>
-              <View style={styles.addFriendButtons}>
+            <View className="p-4 bg-white border-b border-gray-100">
+              <Text className="text-gray-700 text-sm font-semibold mb-2">Enter friend's email</Text>
+              <TextInput
+                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-base mb-3"
+                placeholder="friend@example.com"
+                placeholderTextColor="#999"
+                value={friendEmail}
+                onChangeText={setFriendEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoFocus
+                editable={!sending}
+              />
+              <View className="flex-row gap-2">
                 <TouchableOpacity
-                  style={[styles.button, styles.secondaryButton]}
+                  className="flex-1 bg-gray-100 py-3 rounded-xl active:opacity-70"
                   onPress={() => {
                     setShowAddFriend(false);
                     setFriendEmail('');
                   }}
                   disabled={sending}
                 >
-                  <ThemedText style={styles.secondaryButtonText}>Cancel</ThemedText>
+                  <Text className="text-gray-700 text-center font-semibold">Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[
-                    styles.button,
-                    styles.primaryButton,
-                    sending && styles.buttonDisabled,
-                  ]}
+                  className={`flex-1 bg-blue-500 py-3 rounded-xl active:opacity-70 ${sending ? 'opacity-60' : ''}`}
                   onPress={handleSendRequest}
                   disabled={sending}
                 >
                   {sending ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <ThemedText style={styles.primaryButtonText}>
-                      Send Request
-                    </ThemedText>
+                    <Text className="text-white text-center font-semibold">Send Request</Text>
                   )}
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
-            <View style={styles.addFriendPrompt}>
+            <View className="p-4 bg-white border-b border-gray-100">
               <TouchableOpacity
-                style={styles.addFriendButton}
+                className="bg-blue-500 py-4 rounded-2xl shadow-sm active:opacity-70"
                 onPress={() => setShowAddFriend(true)}
               >
-                <ThemedText style={styles.addFriendButtonText}>
-                  + Add Friend
-                </ThemedText>
+                <Text className="text-white text-center text-base font-semibold">+ Add Friend</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -429,285 +387,50 @@ export default function FriendsScreen() {
           data={friends}
           renderItem={renderFriend}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={{ padding: 16 }}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <ThemedText style={styles.emptyText}>
-                No friends yet. Send a friend request to get started!
-              </ThemedText>
+            <View className="flex-1 items-center justify-center py-20">
+              <View className="bg-blue-50 w-20 h-20 rounded-full items-center justify-center mb-4">
+                <Text className="text-4xl">👥</Text>
+              </View>
+              <Text className="text-gray-900 text-lg font-semibold mb-2">No friends yet</Text>
+              <Text className="text-gray-500 text-center text-sm px-8">
+                Send a friend request to start connecting!
+              </Text>
             </View>
           }
         />
       ) : (
-        <View style={styles.requestsContainer}>
+        <ScrollView contentContainerStyle={{ padding: 16 }}>
           {receivedRequests.length > 0 && (
-            <View style={styles.requestSection}>
-              <ThemedText style={styles.sectionTitle}>
-                Received ({receivedRequests.length})
-              </ThemedText>
-              <FlatList
-                data={receivedRequests}
-                renderItem={renderReceivedRequest}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.sectionList}
-              />
+            <View className="mb-6">
+              <Text className="text-gray-900 text-lg font-bold mb-3">Received</Text>
+              {receivedRequests.map((item) => (
+                <View key={item.id}>{renderReceivedRequest({ item })}</View>
+              ))}
             </View>
           )}
           {sentRequests.length > 0 && (
-            <View style={styles.requestSection}>
-              <ThemedText style={styles.sectionTitle}>
-                Sent ({sentRequests.length})
-              </ThemedText>
-              <FlatList
-                data={sentRequests}
-                renderItem={renderSentRequest}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.sectionList}
-              />
+            <View className="mb-6">
+              <Text className="text-gray-900 text-lg font-bold mb-3">Sent</Text>
+              {sentRequests.map((item) => (
+                <View key={item.id}>{renderSentRequest({ item })}</View>
+              ))}
             </View>
           )}
           {receivedRequests.length === 0 && sentRequests.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <ThemedText style={styles.emptyText}>
-                No pending requests
-              </ThemedText>
+            <View className="flex-1 items-center justify-center py-20">
+              <View className="bg-gray-100 w-20 h-20 rounded-full items-center justify-center mb-4">
+                <Text className="text-4xl">📭</Text>
+              </View>
+              <Text className="text-gray-900 text-lg font-semibold mb-2">No pending requests</Text>
+              <Text className="text-gray-500 text-center text-sm">
+                All caught up!
+              </Text>
             </View>
           )}
-        </View>
+        </ScrollView>
       )}
-    </ThemedView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    padding: 16,
-    paddingTop: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    opacity: 0.6,
-    marginTop: 4,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  tab: {
-    flex: 1,
-    padding: 16,
-    alignItems: 'center',
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#007AFF',
-  },
-  tabText: {
-    fontSize: 16,
-    opacity: 0.6,
-  },
-  activeTabText: {
-    opacity: 1,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  addFriendPrompt: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  addFriendButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  addFriendButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  addFriendContainer: {
-    padding: 16,
-    backgroundColor: '#f9f9f9',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  addFriendLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  addFriendInput: {
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  addFriendButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  button: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButton: {
-    backgroundColor: '#007AFF',
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: '#f5f5f5',
-  },
-  secondaryButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  list: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  requestsContainer: {
-    flex: 1,
-  },
-  requestSection: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  sectionList: {
-    gap: 12,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    opacity: 0.5,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  itemInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  itemDetails: {
-    flex: 1,
-  },
-  itemEmail: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  itemDate: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  requestButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  acceptButton: {
-    backgroundColor: '#34C759',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  acceptButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  rejectButton: {
-    backgroundColor: '#FF3B30',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  rejectButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  removeButton: {
-    backgroundColor: '#FF3B30',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  removeButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});

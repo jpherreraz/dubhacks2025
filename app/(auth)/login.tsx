@@ -3,15 +3,13 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Text,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/auth-context';
 
 export default function LoginScreen() {
@@ -39,113 +37,73 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
+      className="flex-1 bg-gradient-to-b from-blue-50 to-white"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
     >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          Welcome Back
-        </ThemedText>
-        <ThemedText style={styles.subtitle}>Sign in to continue</ThemedText>
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            editable={!loading}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
+      <View className="flex-1 px-8 justify-center">
+        {/* Logo/Icon Area */}
+        <View className="items-center mb-12">
+          <View className="w-20 h-20 rounded-full bg-blue-500 items-center justify-center shadow-lg mb-4">
+            <Text className="text-white text-4xl font-bold">💬</Text>
+          </View>
+          <Text className="text-4xl font-bold text-gray-900 mb-2">Welcome Back</Text>
+          <Text className="text-base text-gray-500">Sign in to continue chatting</Text>
         </View>
 
+        {/* Input Fields */}
+        <View className="gap-4 mb-6">
+          <View>
+            <Text className="text-sm font-semibold text-gray-700 mb-2 ml-1">Email</Text>
+            <TextInput
+              className="bg-white border-2 border-gray-200 rounded-2xl px-5 py-4 text-base focus:border-blue-500"
+              placeholder="you@example.com"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              editable={!loading}
+            />
+          </View>
+          <View>
+            <Text className="text-sm font-semibold text-gray-700 mb-2 ml-1">Password</Text>
+            <TextInput
+              className="bg-white border-2 border-gray-200 rounded-2xl px-5 py-4 text-base focus:border-blue-500"
+              placeholder="Enter your password"
+              placeholderTextColor="#9CA3AF"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!loading}
+            />
+          </View>
+        </View>
+
+        {/* Sign In Button */}
         <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
+          className={`bg-blue-500 py-5 rounded-2xl shadow-lg mb-6 active:opacity-80 ${loading ? 'opacity-60' : ''}`}
           onPress={handleLogin}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <ThemedText style={styles.buttonText}>Sign In</ThemedText>
+            <Text className="text-white text-center text-lg font-bold">Sign In</Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/(auth)/signup')} disabled={loading}>
-          <ThemedText style={styles.linkText}>
-            Don't have an account? <ThemedText style={styles.linkTextBold}>Sign Up</ThemedText>
-          </ThemedText>
+        {/* Sign Up Link */}
+        <TouchableOpacity
+          className="active:opacity-70"
+          onPress={() => router.push('/(auth)/signup')}
+          disabled={loading}
+        >
+          <Text className="text-center text-base text-gray-600">
+            Don't have an account?{' '}
+            <Text className="font-bold text-blue-500">Sign Up</Text>
+          </Text>
         </TouchableOpacity>
-      </ThemedView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    marginBottom: 32,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  inputContainer: {
-    gap: 16,
-    marginBottom: 24,
-  },
-  input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  linkText: {
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  linkTextBold: {
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-});
