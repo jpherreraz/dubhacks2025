@@ -88,7 +88,7 @@ export default function DirectMessagesScreen() {
   if (loading) {
     return (
       <View className="flex-1 bg-gray-50">
-        <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+        <View className="pt-2 px-6 pb-4 bg-white border-b border-gray-100">
           <Text className="text-3xl font-bold text-gray-900">Messages</Text>
         </View>
         <View className="flex-1 items-center justify-center">
@@ -101,7 +101,7 @@ export default function DirectMessagesScreen() {
   return (
     <View className="flex-1 bg-gray-50">
       {/* Header */}
-      <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+      <View className="pt-2 px-6 pb-4 bg-white border-b border-gray-100">
         <View className="flex-row items-center justify-between mb-2">
           <Text className="text-3xl font-bold text-gray-900">Messages</Text>
           <TouchableOpacity

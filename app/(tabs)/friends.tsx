@@ -286,7 +286,7 @@ export default function FriendsScreen() {
   if (loading) {
     return (
       <View className="flex-1 bg-gray-50">
-        <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+        <View className="pt-2 px-6 pb-4 bg-white border-b border-gray-100">
           <Text className="text-3xl font-bold text-gray-900">Friends</Text>
         </View>
         <View className="flex-1 items-center justify-center">
@@ -299,7 +299,7 @@ export default function FriendsScreen() {
   return (
     <View className="flex-1 bg-gray-50">
       {/* Header */}
-      <View className="pt-16 px-6 pb-4 bg-white border-b border-gray-100">
+      <View className="pt-2 px-6 pb-4 bg-white border-b border-gray-100">
         <Text className="text-3xl font-bold text-gray-900 mb-1">Friends</Text>
         <Text className="text-gray-500 text-sm">
           {friends.length} {friends.length === 1 ? 'friend' : 'friends'}

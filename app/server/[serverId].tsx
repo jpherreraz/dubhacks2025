@@ -14,36 +14,28 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 
-export default function ChatScreen() {
+export default function ServerChatScreen() {
   const { user } = useAuth();
-  const { friendEmail } = useLocalSearchParams<{ friendEmail: string }>();
+  const { serverId, serverName, ownerEmail } = useLocalSearchParams<{
+    serverId: string;
+    serverName: string;
+    ownerEmail: string;
+  }>();
   const client = useMemo(() => generateClient<Schema>(), []);
-  const [messages, setMessages] = useState<Schema['Message']['type'][]>([]);
+  const isOwner = user?.email === ownerEmail;
+  const [messages, setMessages] = useState<Schema['ServerMessage']['type'][]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
-    if (user?.email && friendEmail) {
+    if (user?.email && serverId) {
       fetchMessages();
 
       // Subscribe to new messages
-      const subscription = client.models.Message.observeQuery({
+      const subscription = client.models.ServerMessage.observeQuery({
         filter: {
-          or: [
-            {
-              and: [
-                { senderEmail: { eq: user.email } },
-                { receiverEmail: { eq: friendEmail } },
-              ],
-            },
-            {
-              and: [
-                { senderEmail: { eq: friendEmail } },
-                { receiverEmail: { eq: user.email } },
-              ],
-            },
-          ],
+          serverId: { eq: serverId },
         },
       }).subscribe({
         next: ({ items }) => {
@@ -56,39 +48,24 @@ export default function ChatScreen() {
 
       return () => subscription.unsubscribe();
     }
-  }, [user?.email, friendEmail]);
+  }, [user?.email, serverId]);
 
   async function fetchMessages() {
     try {
       setLoading(true);
-      const { data: allMessages } = await client.models.Message.list();
+      const { data: allMessages } = await client.models.ServerMessage.list();
 
-      // Filter messages between current user and friend
-      const conversationMessages = allMessages.filter(
-        (msg) =>
-          msg !== null &&
-          ((msg.senderEmail === user?.email && msg.receiverEmail === friendEmail) ||
-            (msg.senderEmail === friendEmail && msg.receiverEmail === user?.email))
+      // Filter messages for this server
+      const serverMessages = allMessages.filter(
+        (msg) => msg !== null && msg.serverId === serverId
       );
 
       // Sort by timestamp
-      const sortedMessages = conversationMessages.sort(
+      const sortedMessages = serverMessages.sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
 
       setMessages(sortedMessages);
-
-      // Mark messages from friend as read
-      const unreadMessages = sortedMessages.filter(
-        (msg) => msg.senderEmail === friendEmail && !msg.read
-      );
-
-      for (const msg of unreadMessages) {
-        await client.models.Message.update({
-          id: msg.id,
-          read: true,
-        });
-      }
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
@@ -97,15 +74,14 @@ export default function ChatScreen() {
   }
 
   async function sendMessage() {
-    if (!inputText.trim() || !user?.email || !friendEmail) return;
+    if (!inputText.trim() || !user?.email || !serverId) return;
 
     try {
-      await client.models.Message.create({
+      await client.models.ServerMessage.create({
+        serverId: serverId,
         senderEmail: user.email,
-        receiverEmail: friendEmail,
         content: inputText.trim(),
         createdAt: new Date().toISOString(),
-        read: false,
       });
 
       setInputText('');
@@ -119,28 +95,36 @@ export default function ChatScreen() {
     }
   }
 
-  function renderMessage({ item }: { item: Schema['Message']['type'] }) {
+  function renderMessage({ item }: { item: Schema['ServerMessage']['type'] }) {
     const isUser = item.senderEmail === user?.email;
+    const senderName = item.senderEmail.split('@')[0];
 
     return (
-      <View className={`mb-2 px-4 ${isUser ? 'items-end' : 'items-start'}`}>
-        <View
-          className={`max-w-[75%] px-4 py-3 rounded-3xl ${
-            isUser
-              ? 'bg-blue-500 rounded-br-md'
-              : 'bg-gray-200 rounded-bl-md'
-          }`}
-        >
-          <Text className={`text-base ${isUser ? 'text-white' : 'text-gray-900'}`}>
-            {item.content}
+      <View className="mb-3 px-4">
+        {!isUser && (
+          <Text className="text-xs font-semibold text-gray-600 mb-1 ml-1">
+            {senderName}
+          </Text>
+        )}
+        <View className={`${isUser ? 'items-end' : 'items-start'}`}>
+          <View
+            className={`max-w-[75%] px-4 py-3 rounded-2xl ${
+              isUser
+                ? 'bg-blue-500 rounded-br-md'
+                : 'bg-white rounded-bl-md shadow-sm'
+            }`}
+          >
+            <Text className={`text-base ${isUser ? 'text-white' : 'text-gray-900'}`}>
+              {item.content}
+            </Text>
+          </View>
+          <Text className="text-xs text-gray-500 mt-1 px-2">
+            {new Date(item.createdAt).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </Text>
         </View>
-        <Text className="text-xs text-gray-500 mt-1 px-2">
-          {new Date(item.createdAt).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
       </View>
     );
   }
@@ -156,7 +140,7 @@ export default function ChatScreen() {
             <Text className="text-blue-500 text-3xl">‹</Text>
           </TouchableOpacity>
           <Text className="text-xl font-bold text-gray-900">
-            {friendEmail || 'Unknown'}
+            {serverName || 'Server'}
           </Text>
         </View>
         <View className="flex-1 items-center justify-center">
@@ -181,17 +165,30 @@ export default function ChatScreen() {
           >
             <Text className="text-blue-500 text-3xl font-light">‹</Text>
           </TouchableOpacity>
-          <View className="w-10 h-10 rounded-full bg-blue-500 items-center justify-center mr-3 shadow-sm">
+          <View className="w-10 h-10 rounded-2xl bg-purple-500 items-center justify-center mr-3 shadow-sm">
             <Text className="text-white text-base font-bold">
-              {friendEmail?.charAt(0).toUpperCase() || '?'}
+              {serverName?.charAt(0).toUpperCase() || 'S'}
             </Text>
           </View>
           <View className="flex-1">
             <Text className="text-lg font-semibold text-gray-900">
-              {friendEmail || 'Unknown'}
+              {serverName || 'Server'}
             </Text>
-            <Text className="text-xs text-gray-500">Direct Message</Text>
+            <Text className="text-xs text-gray-500">Server Chat</Text>
           </View>
+          {isOwner && (
+            <TouchableOpacity
+              className="bg-gray-100 w-9 h-9 rounded-full items-center justify-center active:opacity-70"
+              onPress={() =>
+                router.push({
+                  pathname: '/server/settings/[serverId]',
+                  params: { serverId, serverName, ownerEmail },
+                })
+              }
+            >
+              <Text className="text-gray-700 text-lg">⚙</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -205,14 +202,14 @@ export default function ChatScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View className="flex-1 items-center justify-center px-8">
-            <View className="bg-blue-50 w-20 h-20 rounded-full items-center justify-center mb-4">
+            <View className="bg-purple-50 w-20 h-20 rounded-full items-center justify-center mb-4">
               <Text className="text-4xl">💬</Text>
             </View>
             <Text className="text-gray-900 text-lg font-semibold mb-2">
-              Start a conversation
+              Start the conversation
             </Text>
             <Text className="text-gray-500 text-center text-sm">
-              Send a message to {friendEmail?.split('@')[0]}!
+              Be the first to send a message in {serverName}!
             </Text>
           </View>
         }
@@ -236,7 +233,7 @@ export default function ChatScreen() {
           </View>
           <TouchableOpacity
             className={`w-9 h-9 rounded-full items-center justify-center mb-1 ${
-              inputText.trim() ? 'bg-blue-500' : 'bg-gray-300'
+              inputText.trim() ? 'bg-purple-500' : 'bg-gray-300'
             } active:opacity-70`}
             onPress={sendMessage}
             disabled={!inputText.trim()}
