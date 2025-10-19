@@ -25,6 +25,10 @@ const schema = a.schema({
       senderEmail: a.string().required(),
       receiverEmail: a.string().required(),
       content: a.string().required(),
+      fileUrl: a.string(),
+      filePath: a.string(),
+      fileName: a.string(),
+      fileType: a.string(),
       createdAt: a.datetime().required(),
       read: a.boolean().default(false),
     })
