@@ -45,5 +45,5 @@ app-example
 
 # AWS Amplify
 .amplify/
-amplify_outputs.json
-amplify-outputs.json
+# amplify_outputs.json - NOT ignored, needed for shared backend
+# amplify-outputs.json - NOT ignored, needed for shared backend
