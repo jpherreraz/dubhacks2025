@@ -85,6 +85,10 @@ export function isAudioFile(mimeType: string): boolean {
   return mimeType.startsWith('audio/');
 }
 
+export function isVideoFile(mimeType: string): boolean {
+  return mimeType.startsWith('video/');
+}
+
 /**
  * Gets a fresh presigned URL for a file path
  */

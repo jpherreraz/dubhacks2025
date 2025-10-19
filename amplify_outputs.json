@@ -1,9 +1,9 @@
 {
   "auth": {
-    "user_pool_id": "us-east-1_DuIusiYQ3",
+    "user_pool_id": "us-east-1_ta2sRYNqy",
     "aws_region": "us-east-1",
-    "user_pool_client_id": "4n0dhs1kjavtbfq1fv3mckllfj",
-    "identity_pool_id": "us-east-1:cf883822-a590-4d3a-92d2-da6cc1257354",
+    "user_pool_client_id": "45ke3nhkhougid9viohb0cupar",
+    "identity_pool_id": "us-east-1:24eae3c0-f2c4-47cb-908f-d9596580e02b",
     "mfa_methods": [],
     "standard_required_attributes": [
       "email"
@@ -26,7 +26,7 @@
     "unauthenticated_identities_enabled": true
   },
   "data": {
-    "url": "https://6or4pavo3rdwxck4megjdxgwva.appsync-api.us-east-1.amazonaws.com/graphql",
+    "url": "https://rzi66qz7u5euno4oww5647vq6q.appsync-api.us-east-1.amazonaws.com/graphql",
     "aws_region": "us-east-1",
     "default_authorization_type": "AMAZON_COGNITO_USER_POOLS",
     "authorization_types": [
@@ -265,6 +265,13 @@
               "isRequired": false,
               "attributes": []
             },
+            "replyToMessageId": {
+              "name": "replyToMessageId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "updatedAt": {
               "name": "updatedAt",
               "isArray": false,
@@ -276,6 +283,83 @@
           },
           "syncable": true,
           "pluralName": "Messages",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
+        },
+        "Reaction": {
+          "name": "Reaction",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "messageId": {
+              "name": "messageId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "userEmail": {
+              "name": "userEmail",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "emoji": {
+              "name": "emoji",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": [],
+              "isReadOnly": true
+            }
+          },
+          "syncable": true,
+          "pluralName": "Reactions",
           "attributes": [
             {
               "type": "model",
@@ -762,11 +846,11 @@
   },
   "storage": {
     "aws_region": "us-east-1",
-    "bucket_name": "amplify-dubhacks2025-jpher-chatfilesbuckete97ebeb2-4ocyk6vrqmew",
+    "bucket_name": "amplify-dubhacks2025-tiago-chatfilesbuckete97ebeb2-j4jozpbusnaw",
     "buckets": [
       {
         "name": "chatFiles",
-        "bucket_name": "amplify-dubhacks2025-jpher-chatfilesbuckete97ebeb2-4ocyk6vrqmew",
+        "bucket_name": "amplify-dubhacks2025-tiago-chatfilesbuckete97ebeb2-j4jozpbusnaw",
         "aws_region": "us-east-1",
         "paths": {
           "files/*": {

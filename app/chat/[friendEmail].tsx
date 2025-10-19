@@ -12,14 +12,16 @@ import {
   Alert,
   GestureResponderEvent,
   PanResponder,
+  Modal,
 } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import * as DocumentPicker from 'expo-document-picker';
-import { uploadFile, isImageFile, isAudioFile, getFileUrl } from '@/lib/image-upload';
-import { Audio } from 'expo-av';
+import { uploadFile, isImageFile, isAudioFile, isVideoFile, getFileUrl } from '@/lib/image-upload';
+import { Audio, Video } from 'expo-av';
+import EmojiPicker from 'emoji-picker-react';
 
 // Audio progress bar component
 function AudioProgressBar({
@@ -127,6 +129,12 @@ export default function ChatScreen() {
     type: string;
   }>>([]);
   const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
+  const [replyingTo, setReplyingTo] = useState<Schema['Message']['type'] | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [reactions, setReactions] = useState<Record<string, Schema['Reaction']['type'][]>>({});
+  const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -134,7 +142,7 @@ export default function ChatScreen() {
       fetchMessages();
 
       // Subscribe to new messages
-      const subscription = client.models.Message.observeQuery({
+      const messageSubscription = client.models.Message.observeQuery({
         filter: {
           or: [
             {
@@ -161,10 +169,36 @@ export default function ChatScreen() {
 
           // Load fresh URLs for all messages with files
           await loadFileUrls(validMessages);
+
+          // Load reactions for all messages
+          const messageIds = validMessages.map((msg) => msg.id);
+          await loadReactions(messageIds);
         },
       });
 
-      return () => subscription.unsubscribe();
+      // Subscribe to reactions
+      const reactionSubscription = client.models.Reaction.observeQuery().subscribe({
+        next: ({ items }) => {
+          console.log('Reaction subscription update, total reactions:', items.length);
+          // Group all reactions by message ID
+          const reactionsByMessage: Record<string, Schema['Reaction']['type'][]> = {};
+          items.forEach((reaction) => {
+            if (reaction) {
+              if (!reactionsByMessage[reaction.messageId]) {
+                reactionsByMessage[reaction.messageId] = [];
+              }
+              reactionsByMessage[reaction.messageId].push(reaction);
+            }
+          });
+          console.log('Setting reactions from subscription:', reactionsByMessage);
+          setReactions(reactionsByMessage);
+        },
+      });
+
+      return () => {
+        messageSubscription.unsubscribe();
+        reactionSubscription.unsubscribe();
+      };
     }
   }, [user?.email, friendEmail]);
 
@@ -216,6 +250,10 @@ export default function ChatScreen() {
 
       // Load fresh URLs for files
       await loadFileUrls(sortedMessages);
+
+      // Load reactions for all messages
+      const messageIds = sortedMessages.map((msg) => msg.id);
+      await loadReactions(messageIds);
 
       // Mark messages from friend as read
       const unreadMessages = sortedMessages.filter(
@@ -301,9 +339,11 @@ export default function ChatScreen() {
     // Determine content based on file type
     const isImage = isImageFile(result.fileType);
     const isAudio = isAudioFile(result.fileType);
+    const isVideo = isVideoFile(result.fileType);
     let content = '[File]';
     if (isImage) content = '[Image]';
     else if (isAudio) content = '[Audio]';
+    else if (isVideo) content = '[Video]';
     else content = `[File: ${result.fileName}]`;
 
     console.log('Creating message with:', {
@@ -350,6 +390,7 @@ export default function ChatScreen() {
           content: inputText.trim(),
           createdAt: new Date().toISOString(),
           read: false,
+          replyToMessageId: replyingTo?.id,
         });
       }
 
@@ -358,9 +399,10 @@ export default function ChatScreen() {
         await sendFileMessage(file.uri, file.name, file.type);
       }
 
-      // Clear input and files
+      // Clear input, files, and reply
       setInputText('');
       setPendingFiles([]);
+      setReplyingTo(null);
       setUploading(false);
 
       // Auto-scroll to bottom
@@ -370,6 +412,29 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('Error sending message:', error);
       setUploading(false);
+    }
+  }
+
+  function handleReply(message: Schema['Message']['type']) {
+    setOpenMenuId(null);
+    setReplyingTo(message);
+  }
+
+  function cancelReply() {
+    setReplyingTo(null);
+  }
+
+  async function handleDeleteMessage(message: Schema['Message']['type']) {
+    setOpenMenuId(null);
+
+    if (message.senderEmail !== user?.email) {
+      return;
+    }
+
+    try {
+      await client.models.Message.delete({ id: message.id });
+    } catch (error) {
+      console.error('Error deleting message:', error);
     }
   }
 
@@ -472,25 +537,126 @@ export default function ChatScreen() {
     }
   }
 
+  function handleEmojiSelect(emojiData: any) {
+    // Insert emoji at the end of the current input text
+    setInputText(prev => prev + emojiData.emoji);
+  }
+
+  async function loadReactions(messageIds: string[]) {
+    try {
+      const { data: allReactions } = await client.models.Reaction.list();
+      console.log('Loading reactions for messages:', messageIds);
+      console.log('All reactions from DB:', allReactions);
+
+      // Group reactions by message ID
+      const reactionsByMessage: Record<string, Schema['Reaction']['type'][]> = {};
+      allReactions.forEach((reaction) => {
+        if (reaction && messageIds.includes(reaction.messageId)) {
+          if (!reactionsByMessage[reaction.messageId]) {
+            reactionsByMessage[reaction.messageId] = [];
+          }
+          reactionsByMessage[reaction.messageId].push(reaction);
+        }
+      });
+
+      console.log('Grouped reactions:', reactionsByMessage);
+      setReactions(reactionsByMessage);
+    } catch (error) {
+      console.error('Error loading reactions:', error);
+    }
+  }
+
+  async function addReaction(messageId: string, emoji: string) {
+    if (!user?.email) return;
+
+    try {
+      console.log('Adding reaction:', { messageId, emoji, userEmail: user.email });
+      // Check if user already reacted with this emoji
+      const existingReaction = reactions[messageId]?.find(
+        (r) => r.userEmail === user.email && r.emoji === emoji
+      );
+
+      if (existingReaction) {
+        // Remove the reaction if it already exists
+        console.log('Removing existing reaction:', existingReaction.id);
+        await client.models.Reaction.delete({ id: existingReaction.id });
+      } else {
+        // Add new reaction
+        console.log('Creating new reaction');
+        const result = await client.models.Reaction.create({
+          messageId,
+          userEmail: user.email,
+          emoji,
+          createdAt: new Date().toISOString(),
+        });
+        console.log('Reaction created:', result);
+      }
+
+      setShowReactionPicker(null);
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+    }
+  }
+
   function renderMessage({ item }: { item: Schema['Message']['type'] }) {
     const isUser = item.senderEmail === user?.email;
     const hasFile = !!item.fileUrl || !!item.filePath;
     const isImage = hasFile && item.fileType && isImageFile(item.fileType);
     const isAudio = hasFile && item.fileType && isAudioFile(item.fileType);
+    const isVideo = hasFile && item.fileType && isVideoFile(item.fileType);
     const isThisAudioLoaded = playingMessageId === item.id;
     const isPlaying = isThisAudioLoaded && isAudioPlaying;
     // Use fresh URL from fileUrls map (generated from filePath) if available, otherwise fall back to stored fileUrl
     const fileUrl = fileUrls[item.id] || item.fileUrl;
 
+    // Find the message being replied to
+    const repliedToMessage = item.replyToMessageId
+      ? messages.find((msg) => msg.id === item.replyToMessageId)
+      : null;
+
     return (
       <View className={`mb-2 px-4 ${isUser ? 'items-end' : 'items-start'}`}>
-        <View
-          className={`max-w-[75%] ${hasFile && isImage ? '' : 'px-4 py-3'} rounded-3xl ${
-            isUser
-              ? 'bg-blue-500 rounded-br-md'
-              : 'bg-gray-200 rounded-bl-md'
-          }`}
-        >
+        <View className={`flex-row ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start gap-2`}>
+          {/* 3-dot menu button */}
+          <TouchableOpacity
+            className="w-6 h-6 rounded-full bg-gray-300 items-center justify-center mt-1"
+            onPress={(event) => {
+              event.currentTarget.measure((fx, fy, width, height, px, py) => {
+                // For user messages (right side), position menu to the left
+                const menuWidth = 120;
+                const xPosition = isUser ? px - menuWidth + width : px;
+                setMenuPosition({ x: xPosition, y: py + height });
+                setOpenMenuId(openMenuId === item.id ? null : item.id);
+              });
+            }}
+          >
+            <Text className="text-gray-700 text-xs font-bold">⋮</Text>
+          </TouchableOpacity>
+
+          <View
+            style={hasFile && (isImage || isVideo) ? {
+              width: 240,
+              height: 240
+            } : undefined}
+            className={`${hasFile && (isImage || isVideo) ? '' : 'max-w-[70%] px-4 py-3 rounded-3xl'} ${
+              hasFile && (isImage || isVideo)
+                ? ''
+                : isUser
+                ? 'bg-blue-500 rounded-br-md'
+                : 'bg-gray-200 rounded-bl-md'
+            }`}
+          >
+          {/* Reply Context */}
+          {repliedToMessage && (
+            <View className={`mb-2 pb-2 border-b ${isUser ? 'border-blue-400' : 'border-gray-300'} ${hasFile && (isImage || isVideo) ? 'px-4 pt-3' : ''}`}>
+              <Text className={`text-xs font-semibold mb-1 ${isUser ? 'text-blue-100' : 'text-gray-600'}`}>
+                ↩ Replying to {repliedToMessage.senderEmail === user?.email ? 'yourself' : repliedToMessage.senderEmail?.split('@')[0]}
+              </Text>
+              <Text className={`text-sm ${isUser ? 'text-blue-100' : 'text-gray-600'}`} numberOfLines={2}>
+                {repliedToMessage.content}
+              </Text>
+            </View>
+          )}
           {hasFile && isImage ? (
             <View className="overflow-hidden rounded-3xl">
               <Image
@@ -500,6 +666,38 @@ export default function ChatScreen() {
               />
               {item.content !== '[Image]' && (
                 <View className="px-4 py-2">
+                  <Text className={`text-base ${isUser ? 'text-white' : 'text-gray-900'}`}>
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : hasFile && isVideo ? (
+            <View style={{ lineHeight: 0, fontSize: 0, maxWidth: 300 }}>
+              <View className="overflow-hidden rounded-3xl" style={{ maxWidth: 300, maxHeight: 400 }}>
+                <Video
+                  source={{ uri: fileUrl }}
+                  useNativeControls
+                  resizeMode="contain"
+                  isLooping={false}
+                  style={{
+                    width: '100%',
+                    height: 'auto',
+                    maxWidth: 300,
+                    maxHeight: 400,
+                    minHeight: 150,
+                    display: 'block',
+                    margin: 0,
+                    padding: 0,
+                    verticalAlign: 'top',
+                    border: 'none',
+                    outline: 'none',
+                    aspectRatio: 'auto'
+                  }}
+                />
+              </View>
+              {item.content !== '[Video]' && (
+                <View className="px-4 py-2 bg-gray-100 rounded-b-3xl">
                   <Text className={`text-base ${isUser ? 'text-white' : 'text-gray-900'}`}>
                     {item.content}
                   </Text>
@@ -586,7 +784,47 @@ export default function ChatScreen() {
               {item.content}
             </Text>
           )}
+          </View>
         </View>
+
+        {/* Reactions Display */}
+        {reactions[item.id] && reactions[item.id].length > 0 && (
+          <View className={`flex-row flex-wrap gap-1 mt-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            {(() => {
+              // Group reactions by emoji
+              const reactionGroups: Record<string, { emoji: string; users: string[]; hasCurrentUser: boolean }> = {};
+              reactions[item.id].forEach((reaction) => {
+                if (!reactionGroups[reaction.emoji]) {
+                  reactionGroups[reaction.emoji] = {
+                    emoji: reaction.emoji,
+                    users: [],
+                    hasCurrentUser: false,
+                  };
+                }
+                reactionGroups[reaction.emoji].users.push(reaction.userEmail);
+                if (reaction.userEmail === user?.email) {
+                  reactionGroups[reaction.emoji].hasCurrentUser = true;
+                }
+              });
+
+              return Object.values(reactionGroups).map((group) => (
+                <TouchableOpacity
+                  key={group.emoji}
+                  className={`flex-row items-center px-2 py-1 rounded-full ${
+                    group.hasCurrentUser ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100 border border-gray-300'
+                  }`}
+                  onPress={() => addReaction(item.id, group.emoji)}
+                >
+                  <Text className="text-sm mr-1">{group.emoji}</Text>
+                  <Text className={`text-xs font-semibold ${group.hasCurrentUser ? 'text-blue-700' : 'text-gray-600'}`}>
+                    {group.users.length}
+                  </Text>
+                </TouchableOpacity>
+              ));
+            })()}
+          </View>
+        )}
+
         <Text className="text-xs text-gray-500 mt-1 px-2">
           {new Date(item.createdAt).toLocaleTimeString([], {
             hour: '2-digit',
@@ -670,6 +908,37 @@ export default function ChatScreen() {
         }
       />
 
+      {/* Reply Indicator */}
+      {replyingTo && (
+        <View className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex-row items-center">
+          <View className="flex-1 mr-2">
+            <Text className="text-xs text-blue-600 font-semibold mb-1">
+              Replying to {replyingTo.senderEmail === user?.email ? 'yourself' : replyingTo.senderEmail?.split('@')[0]}
+            </Text>
+            <Text className="text-sm text-gray-700" numberOfLines={1}>
+              {replyingTo.content}
+            </Text>
+          </View>
+          <TouchableOpacity
+            className="w-6 h-6 rounded-full bg-blue-200 items-center justify-center active:opacity-70"
+            onPress={cancelReply}
+          >
+            <Text className="text-blue-700 text-xs font-bold">✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Emoji Picker */}
+      {showEmojiPicker && (
+        <View className="bg-white border-t border-gray-200" style={{ height: 350 }}>
+          <EmojiPicker
+            onEmojiClick={handleEmojiSelect}
+            width="100%"
+            height={350}
+          />
+        </View>
+      )}
+
       {/* Input Area */}
       <View className="px-4 py-3 bg-white border-t border-gray-200">
         <View className="flex-row items-end">
@@ -684,6 +953,12 @@ export default function ChatScreen() {
               <Text className="text-gray-600 text-xl">📎</Text>
             )}
           </TouchableOpacity>
+          <TouchableOpacity
+            className="w-9 h-9 rounded-full items-center justify-center mb-1 mr-2 bg-gray-200 active:opacity-70"
+            onPress={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
+            <Text className="text-gray-600 text-xl">😊</Text>
+          </TouchableOpacity>
           <View className="flex-1 bg-gray-100 rounded-3xl px-5 py-2 mr-2">
             {/* File Previews inside input */}
             {pendingFiles.length > 0 && (
@@ -696,6 +971,10 @@ export default function ChatScreen() {
                         className="w-12 h-12 rounded-lg"
                         resizeMode="cover"
                       />
+                    ) : isVideoFile(file.type) ? (
+                      <View className="w-12 h-12 rounded-lg bg-gray-200 items-center justify-center">
+                        <Text className="text-xl">🎥</Text>
+                      </View>
                     ) : (
                       <View className="w-12 h-12 rounded-lg bg-gray-200 items-center justify-center">
                         <Text className="text-xl">
@@ -708,7 +987,7 @@ export default function ChatScreen() {
                         {file.name}
                       </Text>
                       <Text className="text-xs text-gray-500">
-                        {isImageFile(file.type) ? 'Image' : isAudioFile(file.type) ? 'Audio' : 'File'}
+                        {isImageFile(file.type) ? 'Image' : isVideoFile(file.type) ? 'Video' : isAudioFile(file.type) ? 'Audio' : 'File'}
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -744,6 +1023,106 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Dropdown Menu Modal */}
+      <Modal
+        visible={openMenuId !== null}
+        transparent
+        animationType="none"
+        onRequestClose={() => setOpenMenuId(null)}
+      >
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={1}
+          onPress={() => setOpenMenuId(null)}
+        >
+          {menuPosition && openMenuId && (
+            <View
+              className="bg-white rounded-lg shadow-lg overflow-hidden"
+              style={{
+                position: 'absolute',
+                top: menuPosition.y,
+                left: menuPosition.x,
+                minWidth: 120,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 4,
+                elevation: 10,
+              }}
+            >
+              <TouchableOpacity
+                className="px-4 py-3 border-b border-gray-100 active:bg-gray-100"
+                onPress={() => {
+                  setShowReactionPicker(openMenuId);
+                  setOpenMenuId(null);
+                }}
+              >
+                <Text className="text-gray-900 text-sm">React</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="px-4 py-3 border-b border-gray-100 active:bg-gray-100"
+                onPress={() => {
+                  const message = messages.find(m => m.id === openMenuId);
+                  if (message) handleReply(message);
+                }}
+              >
+                <Text className="text-gray-900 text-sm">Reply</Text>
+              </TouchableOpacity>
+              {messages.find(m => m.id === openMenuId)?.senderEmail === user?.email && (
+                <TouchableOpacity
+                  className="px-4 py-3 active:bg-red-50"
+                  onPress={() => {
+                    const message = messages.find(m => m.id === openMenuId);
+                    if (message) handleDeleteMessage(message);
+                  }}
+                >
+                  <Text className="text-red-600 text-sm">Delete</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Reaction Picker Modal */}
+      <Modal
+        visible={showReactionPicker !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReactionPicker(null)}
+      >
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}
+          activeOpacity={1}
+          onPress={() => setShowReactionPicker(null)}
+        >
+          <View className="bg-white rounded-2xl p-4 mx-8" style={{ maxWidth: 300 }}>
+            <Text className="text-gray-900 font-semibold text-base mb-3 text-center">React with emoji</Text>
+            <View className="flex-row flex-wrap gap-3 justify-center">
+              {['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉'].map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  className="w-12 h-12 items-center justify-center bg-gray-100 rounded-full active:bg-gray-200"
+                  onPress={() => {
+                    if (showReactionPicker) {
+                      addReaction(showReactionPicker, emoji);
+                    }
+                  }}
+                >
+                  <Text className="text-2xl">{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              className="mt-4 py-2 px-4 bg-gray-200 rounded-full active:bg-gray-300"
+              onPress={() => setShowReactionPicker(null)}
+            >
+              <Text className="text-gray-700 text-center font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

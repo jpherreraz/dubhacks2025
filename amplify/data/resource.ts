@@ -31,6 +31,16 @@ const schema = a.schema({
       fileType: a.string(),
       createdAt: a.datetime().required(),
       read: a.boolean().default(false),
+      replyToMessageId: a.string(),
+    })
+    .authorization((allow: any) => [allow.authenticated()]),
+
+  Reaction: a
+    .model({
+      messageId: a.string().required(),
+      userEmail: a.string().required(),
+      emoji: a.string().required(),
+      createdAt: a.datetime().required(),
     })
     .authorization((allow: any) => [allow.authenticated()]),
 
