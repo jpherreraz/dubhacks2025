@@ -10,11 +10,13 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
+import { callBedrockBot, BOT_EMAIL } from '@/lib/bedrock';
 
 export default function ServerChatScreen() {
   const { user } = useAuth();
@@ -31,10 +33,12 @@ export default function ServerChatScreen() {
   const [activeChannel, setActiveChannel] = useState<Schema['Channel']['type'] | null>(null);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showSidebar, setShowSidebar] = useState(false);
   const [notifications, setNotifications] = useState<Schema['ChannelNotification']['type'][]>([]);
   const [replyingTo, setReplyingTo] = useState<Schema['ServerMessage']['type'] | null>(null);
+  const [showChannelModal, setShowChannelModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768; // Show sidebar on tablets and larger
 
   // Check if user is admin
   const userMember = members.find((m) => m.userEmail === user?.email);
@@ -240,7 +244,7 @@ export default function ServerChatScreen() {
 
   async function switchChannel(channel: Schema['Channel']['type']) {
     setActiveChannel(channel);
-    setShowSidebar(false);
+    setShowChannelModal(false); // Close modal on mobile
     cancelReply(); // Clear any active reply when switching channels
 
     // Mark all notifications for this channel as read
@@ -381,6 +385,40 @@ export default function ServerChatScreen() {
 
       setInputText('');
       cancelReply(); // Clear reply state after sending
+
+      // Check if message mentions @bot
+      if (messageContent.toLowerCase().includes('@bot')) {
+        // Extract question (remove @bot from the message)
+        const question = messageContent.replace(/@bot/gi, '').trim();
+
+        if (question) {
+          try {
+            // Call Bedrock bot
+            const botResponse = await callBedrockBot(question);
+
+            // Post bot response as a server message
+            await client.models.ServerMessage.create({
+              serverId: serverId,
+              channelId: activeChannel.id,
+              senderEmail: BOT_EMAIL,
+              content: botResponse,
+              createdAt: new Date().toISOString(),
+              ...(newMessage && { replyToMessageId: newMessage.id }), // Reply to the user's message
+            });
+          } catch (botError) {
+            console.error('Error calling bot:', botError);
+            // Post error message
+            await client.models.ServerMessage.create({
+              serverId: serverId,
+              channelId: activeChannel.id,
+              senderEmail: BOT_EMAIL,
+              content: 'Sorry, I encountered an error processing your request. Please try again.',
+              createdAt: new Date().toISOString(),
+              ...(newMessage && { replyToMessageId: newMessage.id }),
+            });
+          }
+        }
+      }
 
       // Auto-scroll to bottom
       setTimeout(() => {
@@ -540,78 +578,240 @@ export default function ServerChatScreen() {
     );
   }
 
+  // Render channel list (used in both sidebar and modal)
+  const renderChannelList = () => (
+    <FlatList
+      data={channels}
+      keyExtractor={(item) => item.id}
+      contentContainerStyle={{ padding: 8 }}
+      renderItem={({ item }) => {
+        const unreadCount = getUnreadNotificationCount(item.id);
+        const hasNotifications = unreadCount > 0;
+
+        return (
+          <TouchableOpacity
+            className={`flex-row items-center px-3 py-2.5 rounded-lg mb-1 ${
+              activeChannel?.id === item.id
+                ? 'bg-purple-500'
+                : 'bg-gray-50'
+            } active:opacity-70`}
+            onPress={() => switchChannel(item)}
+          >
+            <View className="flex-1">
+              <View className="flex-row items-center gap-1.5">
+                <Text
+                  className={`text-sm font-semibold ${
+                    activeChannel?.id === item.id
+                      ? 'text-white'
+                      : 'text-gray-900'
+                  }`}
+                  numberOfLines={1}
+                >
+                  # {item.name}
+                </Text>
+                {hasNotifications && (
+                  <View className="bg-red-500 w-5 h-5 rounded-full items-center justify-center">
+                    <Text className="text-white text-[10px] font-bold">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View className="flex-row items-center gap-1.5 mt-1">
+                {item.isGeneral && (
+                  <View
+                    className={`px-1.5 py-0.5 rounded ${
+                      activeChannel?.id === item.id
+                        ? 'bg-white/20'
+                        : 'bg-blue-100'
+                    }`}
+                  >
+                    <Text
+                      className={`text-[10px] font-semibold ${
+                        activeChannel?.id === item.id
+                          ? 'text-white'
+                          : 'text-blue-700'
+                      }`}
+                    >
+                      General
+                    </Text>
+                  </View>
+                )}
+                {((item.restricted ?? false) || canManageChannels) && (
+                  <TouchableOpacity
+                    className={`px-1.5 py-0.5 rounded ${
+                      activeChannel?.id === item.id
+                        ? 'bg-white/20'
+                        : (item.restricted ?? false)
+                        ? 'bg-orange-100'
+                        : 'bg-gray-100'
+                    } ${canManageChannels ? 'active:opacity-70' : ''}`}
+                    onPress={(e) => {
+                      if (canManageChannels) {
+                        e.stopPropagation();
+                        toggleChannelRestriction(item);
+                      }
+                    }}
+                    disabled={!canManageChannels}
+                  >
+                    <Text
+                      className={`text-[10px] font-semibold ${
+                        activeChannel?.id === item.id
+                          ? 'text-white'
+                          : (item.restricted ?? false)
+                          ? 'text-orange-700'
+                          : 'text-gray-500'
+                      }`}
+                    >
+                      {(item.restricted ?? false) ? '🔒' : '🔓'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </TouchableOpacity>
+        );
+      }}
+      ListFooterComponent={
+        canManageChannels ? (
+          <TouchableOpacity
+            className="flex-row items-center justify-center px-3 py-2.5 rounded-lg bg-green-50 active:opacity-70 mt-1"
+            onPress={() => {
+              setShowChannelModal(false);
+              router.push({
+                pathname: '/server/channels/[serverId]',
+                params: { serverId, serverName, ownerEmail },
+              });
+            }}
+          >
+            <Text className="text-green-700 text-xs font-semibold">
+              + New Channel
+            </Text>
+          </TouchableOpacity>
+        ) : null
+      }
+    />
+  );
+
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-gray-50"
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-    >
-      {/* Header */}
-      <View className="pt-2 px-4 pb-4 bg-white border-b border-gray-100">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            className="mr-3 active:opacity-70"
-            onPress={() => router.back()}
-          >
-            <Text className="text-blue-500 text-3xl font-light">‹</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className="mr-3 active:opacity-70"
-            onPress={() => setShowSidebar(true)}
-          >
-            <View className="w-10 h-10 rounded-2xl bg-purple-500 items-center justify-center shadow-sm">
-              <Text className="text-white text-base font-bold">#</Text>
-            </View>
-          </TouchableOpacity>
-          <View className="flex-1">
-            <Text className="text-lg font-semibold text-gray-900">
-              {serverName || 'Server'}
-            </Text>
-            <Text className="text-xs text-gray-500">
-              #{activeChannel?.name || 'general'}
-            </Text>
-          </View>
-          {isOwner && (
+    <View className="flex-1 flex-row bg-gray-50">
+      {/* Sidebar (Large Screens Only) */}
+      {isLargeScreen && (
+        <View className="w-64 bg-white border-r border-gray-200">
+        {/* Sidebar Header */}
+        <View className="pt-2 px-4 pb-4 border-b border-gray-100">
+          <View className="flex-row items-center justify-between mb-2">
             <TouchableOpacity
-              className="bg-gray-100 w-9 h-9 rounded-full items-center justify-center active:opacity-70"
-              onPress={() =>
-                router.push({
-                  pathname: '/server/settings/[serverId]',
-                  params: { serverId, serverName, ownerEmail },
-                })
-              }
+              className="active:opacity-70"
+              onPress={() => router.back()}
             >
-              <Text className="text-gray-700 text-lg">⚙</Text>
+              <Text className="text-blue-500 text-2xl">‹</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Messages List */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingVertical: 16, flexGrow: 1 }}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center px-8">
-            <View className="bg-purple-50 w-20 h-20 rounded-full items-center justify-center mb-4">
-              <Text className="text-4xl">💬</Text>
-            </View>
-            <Text className="text-gray-900 text-lg font-semibold mb-2">
-              Start the conversation
-            </Text>
-            <Text className="text-gray-500 text-center text-sm">
-              Be the first to send a message in {serverName}!
-            </Text>
+            {isOwner && (
+              <TouchableOpacity
+                className="bg-gray-100 w-8 h-8 rounded-full items-center justify-center active:opacity-70"
+                onPress={() =>
+                  router.push({
+                    pathname: '/server/settings/[serverId]',
+                    params: { serverId, serverName, ownerEmail },
+                  })
+                }
+              >
+                <Text className="text-gray-700 text-base">⚙</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        }
-      />
+          <Text className="text-lg font-bold text-gray-900" numberOfLines={1}>
+            {serverName || 'Server'}
+          </Text>
+          <Text className="text-xs text-gray-500 mt-1">
+            {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
+          </Text>
+        </View>
 
-      {/* Input Area */}
-      <View className="px-4 py-3 bg-white border-t border-gray-200">
+        {/* Channels List */}
+        {renderChannelList()}
+      </View>
+      )}
+
+      {/* Main Chat Area */}
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        {/* Chat Header */}
+        <View className="pt-2 px-4 pb-4 bg-white border-b border-gray-100">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 flex-row items-center gap-3">
+              {!isLargeScreen && (
+                <View className="flex-row items-center gap-2">
+                  <TouchableOpacity
+                    className="active:opacity-70"
+                    onPress={() => router.back()}
+                  >
+                    <Text className="text-blue-500 text-2xl">‹</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="active:opacity-70"
+                    onPress={() => setShowChannelModal(true)}
+                  >
+                    <View className="w-9 h-9 rounded-xl bg-purple-500 items-center justify-center">
+                      <Text className="text-white text-sm font-bold">#</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+              <View className="flex-1">
+                <Text className="text-lg font-semibold text-gray-900">
+                  #{activeChannel?.name || 'general'}
+                </Text>
+                <Text className="text-xs text-gray-500">
+                  {members.length} {members.length === 1 ? 'member' : 'members'}
+                </Text>
+              </View>
+            </View>
+            {!isLargeScreen && isOwner && (
+              <TouchableOpacity
+                className="bg-gray-100 w-9 h-9 rounded-full items-center justify-center active:opacity-70"
+                onPress={() =>
+                  router.push({
+                    pathname: '/server/settings/[serverId]',
+                    params: { serverId, serverName, ownerEmail },
+                  })
+                }
+              >
+                <Text className="text-gray-700 text-base">⚙</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Messages List */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingVertical: 16, flexGrow: 1 }}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          ListEmptyComponent={
+            <View className="flex-1 items-center justify-center px-8">
+              <View className="bg-purple-50 w-20 h-20 rounded-full items-center justify-center mb-4">
+                <Text className="text-4xl">💬</Text>
+              </View>
+              <Text className="text-gray-900 text-lg font-semibold mb-2">
+                Start the conversation
+              </Text>
+              <Text className="text-gray-500 text-center text-sm">
+                Be the first to send a message in #{activeChannel?.name || 'this channel'}!
+              </Text>
+            </View>
+          }
+        />
+
+        {/* Input Area */}
+        <View className="px-4 py-3 bg-white border-t border-gray-200">
           {/* Reply Indicator */}
           {replyingTo && (
             <View className="flex-row items-center justify-between px-4 py-2 bg-blue-50 rounded-lg mb-2">
@@ -669,151 +869,42 @@ export default function ServerChatScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </KeyboardAvoidingView>
 
-      {/* Channel Sidebar Modal */}
-      <Modal
-        visible={showSidebar}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowSidebar(false)}
-      >
-        <View className="flex-1 bg-black/50">
-          <TouchableOpacity
-            className="flex-1"
-            activeOpacity={1}
-            onPress={() => setShowSidebar(false)}
-          />
-          <View className="bg-white rounded-t-3xl max-h-[70%]">
-            <View className="px-6 pt-6 pb-4 border-b border-gray-100">
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-2xl font-bold text-gray-900">Channels</Text>
-                <TouchableOpacity
-                  className="active:opacity-70"
-                  onPress={() => setShowSidebar(false)}
-                >
-                  <Text className="text-gray-500 text-2xl">✕</Text>
-                </TouchableOpacity>
-              </View>
-              <Text className="text-gray-500 text-sm">
-                {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
-              </Text>
-            </View>
-
-            <FlatList
-              data={channels}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ padding: 16 }}
-              renderItem={({ item }) => {
-                const unreadCount = getUnreadNotificationCount(item.id);
-                const hasNotifications = unreadCount > 0;
-
-                return (
-                  <TouchableOpacity
-                    className={`flex-row items-center p-4 rounded-2xl mb-2 ${
-                      activeChannel?.id === item.id
-                        ? 'bg-purple-500'
-                        : 'bg-gray-50'
-                    } active:opacity-70`}
-                    onPress={() => switchChannel(item)}
-                  >
-                    <View className="flex-1 flex-row items-center gap-2">
-                      <Text
-                        className={`text-lg font-semibold ${
-                          activeChannel?.id === item.id
-                            ? 'text-white'
-                            : 'text-gray-900'
-                        }`}
-                      >
-                        # {item.name}
-                      </Text>
-                      {item.isGeneral && (
-                        <View
-                          className={`px-2 py-0.5 rounded-md ${
-                            activeChannel?.id === item.id
-                              ? 'bg-white/20'
-                              : 'bg-blue-100'
-                          }`}
-                        >
-                          <Text
-                            className={`text-xs font-semibold ${
-                              activeChannel?.id === item.id
-                                ? 'text-white'
-                                : 'text-blue-700'
-                            }`}
-                          >
-                            General
-                          </Text>
-                        </View>
-                      )}
-                      {((item.restricted ?? false) || canManageChannels) && (
-                        <TouchableOpacity
-                          className={`px-2 py-0.5 rounded-md ${
-                            activeChannel?.id === item.id
-                              ? 'bg-white/20'
-                              : (item.restricted ?? false)
-                              ? 'bg-orange-100'
-                              : 'bg-gray-100'
-                          } ${canManageChannels ? 'active:opacity-70' : ''}`}
-                          onPress={(e) => {
-                            console.log('Badge pressed for channel:', item.name, 'canManageChannels:', canManageChannels);
-                            if (canManageChannels) {
-                              e.stopPropagation();
-                              toggleChannelRestriction(item);
-                            } else {
-                              console.log('Cannot manage channels - permission denied');
-                            }
-                          }}
-                          disabled={!canManageChannels}
-                        >
-                          <Text
-                            className={`text-xs font-semibold ${
-                              activeChannel?.id === item.id
-                                ? 'text-white'
-                                : (item.restricted ?? false)
-                                ? 'text-orange-700'
-                                : 'text-gray-500'
-                            }`}
-                          >
-                            {(item.restricted ?? false) ? '🔒 Restricted' : '🔓 Unrestricted'}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                      {hasNotifications && (
-                        <View className="bg-red-500 w-6 h-6 rounded-full items-center justify-center">
-                          <Text className="text-white text-xs font-bold">
-                            {unreadCount}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    {activeChannel?.id === item.id && (
-                      <Text className="text-white text-xl">✓</Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              ListFooterComponent={
-                canManageChannels ? (
-                  <TouchableOpacity
-                    className="flex-row items-center justify-center p-4 rounded-2xl bg-green-50 active:opacity-70 mt-2"
-                    onPress={() => {
-                      setShowSidebar(false);
-                      router.push({
-                        pathname: '/server/channels/[serverId]',
-                        params: { serverId, serverName, ownerEmail },
-                      });
-                    }}
-                  >
-                    <Text className="text-green-700 text-base font-semibold">
-                      + Create New Channel
-                    </Text>
-                  </TouchableOpacity>
-                ) : null
-              }
+      {/* Channel Modal (Mobile Only) */}
+      {!isLargeScreen && (
+        <Modal
+          visible={showChannelModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowChannelModal(false)}
+        >
+          <View className="flex-1 bg-black/50">
+            <TouchableOpacity
+              className="flex-1"
+              activeOpacity={1}
+              onPress={() => setShowChannelModal(false)}
             />
+            <View className="bg-white rounded-t-3xl max-h-[70%]">
+              <View className="px-6 pt-6 pb-4 border-b border-gray-100">
+                <View className="flex-row items-center justify-between mb-2">
+                  <Text className="text-2xl font-bold text-gray-900">Channels</Text>
+                  <TouchableOpacity
+                    className="active:opacity-70"
+                    onPress={() => setShowChannelModal(false)}
+                  >
+                    <Text className="text-gray-500 text-2xl">✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text className="text-gray-500 text-sm">
+                  {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
+                </Text>
+              </View>
+              {renderChannelList()}
+            </View>
           </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+      )}
+    </View>
   );
 }

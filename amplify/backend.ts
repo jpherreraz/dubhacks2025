@@ -8,3 +8,6 @@ export const backend = defineBackend({
   data,
   storage,
 });
+
+// Note: Bedrock permissions are added manually to the authenticated user IAM role
+// via AWS IAM console with the BedrockInvokePolicy inline policy
