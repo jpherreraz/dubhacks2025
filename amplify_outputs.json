@@ -1,9 +1,9 @@
 {
   "auth": {
-    "user_pool_id": "us-east-1_ta2sRYNqy",
+    "user_pool_id": "us-east-1_DuIusiYQ3",
     "aws_region": "us-east-1",
-    "user_pool_client_id": "45ke3nhkhougid9viohb0cupar",
-    "identity_pool_id": "us-east-1:24eae3c0-f2c4-47cb-908f-d9596580e02b",
+    "user_pool_client_id": "4n0dhs1kjavtbfq1fv3mckllfj",
+    "identity_pool_id": "us-east-1:cf883822-a590-4d3a-92d2-da6cc1257354",
     "mfa_methods": [],
     "standard_required_attributes": [
       "email"
@@ -26,10 +26,12 @@
     "unauthenticated_identities_enabled": true
   },
   "data": {
-    "url": "https://rzi66qz7u5euno4oww5647vq6q.appsync-api.us-east-1.amazonaws.com/graphql",
+    "url": "https://6or4pavo3rdwxck4megjdxgwva.appsync-api.us-east-1.amazonaws.com/graphql",
     "aws_region": "us-east-1",
+    "api_key": "da2-tkgs5iqvcnbzdapw637tdpgxme",
     "default_authorization_type": "AMAZON_COGNITO_USER_POOLS",
     "authorization_types": [
+      "API_KEY",
       "AWS_IAM"
     ],
     "model_introspection": {
@@ -426,11 +428,18 @@
               "isRequired": false,
               "attributes": []
             },
+            "isPublic": {
+              "name": "isPublic",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
             "createdAt": {
               "name": "createdAt",
               "isArray": false,
               "type": "AWSDateTime",
-              "isRequired": true,
+              "isRequired": false,
               "attributes": []
             },
             "updatedAt": {
@@ -599,7 +608,7 @@
               "name": "createdAt",
               "isArray": false,
               "type": "AWSDateTime",
-              "isRequired": true,
+              "isRequired": false,
               "attributes": []
             },
             "createdBy": {
@@ -951,11 +960,11 @@
   },
   "storage": {
     "aws_region": "us-east-1",
-    "bucket_name": "amplify-dubhacks2025-tiago-chatfilesbuckete97ebeb2-j4jozpbusnaw",
+    "bucket_name": "amplify-dubhacks2025-jpher-chatfilesbuckete97ebeb2-4ocyk6vrqmew",
     "buckets": [
       {
         "name": "chatFiles",
-        "bucket_name": "amplify-dubhacks2025-tiago-chatfilesbuckete97ebeb2-j4jozpbusnaw",
+        "bucket_name": "amplify-dubhacks2025-jpher-chatfilesbuckete97ebeb2-4ocyk6vrqmew",
         "aws_region": "us-east-1",
         "paths": {
           "files/*": {

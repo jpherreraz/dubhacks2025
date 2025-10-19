@@ -47,3 +47,8 @@ app-example
 .amplify/
 # amplify_outputs.json - NOT ignored, needed for shared backend
 # amplify-outputs.json - NOT ignored, needed for shared backend
+
+# Python virtual environment
+scripts/venv/
+*.pyc
+__pycache__/

@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { router } from 'expo-router';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
+import { BOT_EMAIL } from '@/lib/bedrock';
 
 export default function DirectMessagesScreen() {
   const { user, signOutUser } = useAuth();
@@ -68,7 +69,8 @@ export default function DirectMessagesScreen() {
     });
   }
 
-  function renderFriend({ item }: { item: Schema['Friend']['type'] }) {
+  function renderFriend({ item }: { item: Schema['Friend']['type'] | { id: string; friendEmail: string; isBot: boolean } }) {
+    const isBot = 'isBot' in item && item.isBot;
     const initial = item.friendEmail.charAt(0).toUpperCase();
     const colors = ['bg-blue-500', 'bg-purple-500', 'bg-pink-500', 'bg-green-500', 'bg-orange-500'];
     const colorIndex = item.friendEmail.charCodeAt(0) % colors.length;
@@ -78,14 +80,23 @@ export default function DirectMessagesScreen() {
         className="flex-row items-center bg-white rounded-2xl p-4 mb-3 shadow-sm active:opacity-70"
         onPress={() => openChat(item.friendEmail)}
       >
-        <View className={`w-14 h-14 rounded-full ${colors[colorIndex]} items-center justify-center mr-4 shadow-md`}>
-          <Text className="text-white text-xl font-bold">{initial}</Text>
+        <View className={`w-14 h-14 rounded-full ${isBot ? 'bg-purple-500' : colors[colorIndex]} items-center justify-center mr-4 shadow-md ${isBot ? 'border-2 border-purple-300' : ''}`}>
+          <Text className="text-white text-xl font-bold">{isBot ? '🤖' : initial}</Text>
         </View>
         <View className="flex-1">
-          <Text className="text-gray-900 text-base font-semibold mb-1">
-            {item.friendEmail}
+          <View className="flex-row items-center gap-2 mb-1">
+            <Text className="text-gray-900 text-base font-semibold">
+              {isBot ? 'AI Assistant' : item.friendEmail}
+            </Text>
+            {isBot && (
+              <View className="bg-purple-100 px-2 py-0.5 rounded-full">
+                <Text className="text-purple-600 text-xs font-semibold">BOT</Text>
+              </View>
+            )}
+          </View>
+          <Text className="text-gray-500 text-sm">
+            {isBot ? 'Ask me anything!' : 'Tap to message'}
           </Text>
-          <Text className="text-gray-500 text-sm">Tap to message</Text>
         </View>
         <View className="ml-2">
           <Text className="text-gray-300 text-3xl">›</Text>
@@ -125,29 +136,15 @@ export default function DirectMessagesScreen() {
 
       {/* Friends List */}
       <FlatList
-        data={friends}
+        data={[
+          // Always show bot as first contact
+          { id: 'bot', friendEmail: BOT_EMAIL, isBot: true },
+          ...friends
+        ]}
         renderItem={renderFriend}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-20">
-            <View className="bg-blue-50 w-24 h-24 rounded-full items-center justify-center mb-6">
-              <Text className="text-5xl">💬</Text>
-            </View>
-            <Text className="text-gray-900 text-xl font-semibold mb-2">
-              No conversations yet
-            </Text>
-            <Text className="text-gray-500 text-center text-base mb-8 px-8">
-              Add friends to start chatting and stay connected
-            </Text>
-            <TouchableOpacity
-              className="bg-blue-500 px-8 py-4 rounded-2xl shadow-lg active:opacity-70"
-              onPress={() => router.push('/(tabs)/friends')}
-            >
-              <Text className="text-white text-base font-semibold">Find Friends</Text>
-            </TouchableOpacity>
-          </View>
-        }
+        ListEmptyComponent={null}
       />
 
       {/* Sign Out Confirmation Modal */}

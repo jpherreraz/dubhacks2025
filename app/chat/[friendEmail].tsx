@@ -22,6 +22,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { uploadFile, isImageFile, isAudioFile, isVideoFile, getFileUrl } from '@/lib/image-upload';
 import { Audio, Video } from 'expo-av';
 import EmojiPicker from 'emoji-picker-react';
+import { callBedrockBot, BOT_EMAIL } from '@/lib/bedrock';
 
 // Audio progress bar component
 function AudioProgressBar({
@@ -157,6 +158,12 @@ export default function ChatScreen() {
                 { receiverEmail: { eq: user.email } },
               ],
             },
+            {
+              and: [
+                { senderEmail: { eq: BOT_EMAIL } },
+                { receiverEmail: { eq: friendEmail } },
+              ],
+            },
           ],
         },
       }).subscribe({
@@ -233,12 +240,13 @@ export default function ChatScreen() {
       setLoading(true);
       const { data: allMessages } = await client.models.Message.list();
 
-      // Filter messages between current user and friend
+      // Filter messages between current user and friend (including bot responses)
       const conversationMessages = allMessages.filter(
         (msg) =>
           msg !== null &&
           ((msg.senderEmail === user?.email && msg.receiverEmail === friendEmail) ||
-            (msg.senderEmail === friendEmail && msg.receiverEmail === user?.email))
+            (msg.senderEmail === friendEmail && msg.receiverEmail === user?.email) ||
+            (msg.senderEmail === BOT_EMAIL && msg.receiverEmail === friendEmail))
       );
 
       // Sort by timestamp
@@ -382,12 +390,16 @@ export default function ChatScreen() {
     try {
       setUploading(true);
 
+      const isDirectBotChat = friendEmail === BOT_EMAIL;
+      const hasBotMention = inputText.includes('@bot');
+      const userMessage = inputText.trim();
+
       // Send text message first if there is one
-      if (inputText.trim()) {
+      if (userMessage) {
         await client.models.Message.create({
           senderEmail: user.email,
           receiverEmail: friendEmail,
-          content: inputText.trim(),
+          content: userMessage,
           createdAt: new Date().toISOString(),
           read: false,
           replyToMessageId: replyingTo?.id,
@@ -409,6 +421,55 @@ export default function ChatScreen() {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
+
+      // Handle bot responses
+      if (isDirectBotChat && userMessage) {
+        // Direct message to bot - respond to everything
+        try {
+          const botResponse = await callBedrockBot(userMessage);
+          await client.models.Message.create({
+            senderEmail: BOT_EMAIL,
+            receiverEmail: user.email,
+            content: botResponse,
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        } catch (error) {
+          console.error('Error calling bot:', error);
+          await client.models.Message.create({
+            senderEmail: BOT_EMAIL,
+            receiverEmail: user.email,
+            content: 'Sorry, I encountered an error processing your request. Please try again.',
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        }
+      } else if (hasBotMention && userMessage) {
+        // @bot mention in regular chat - extract question after @bot
+        const questionMatch = userMessage.match(/@bot\s+(.+)/i);
+        if (questionMatch) {
+          const question = questionMatch[1];
+          try {
+            const botResponse = await callBedrockBot(question);
+            await client.models.Message.create({
+              senderEmail: BOT_EMAIL,
+              receiverEmail: friendEmail,
+              content: `@${user.email.split('@')[0]} ${botResponse}`,
+              createdAt: new Date().toISOString(),
+              read: false,
+            });
+          } catch (error) {
+            console.error('Error calling bot:', error);
+            await client.models.Message.create({
+              senderEmail: BOT_EMAIL,
+              receiverEmail: friendEmail,
+              content: `@${user.email.split('@')[0]} Sorry, I encountered an error processing your request. Please try again.`,
+              createdAt: new Date().toISOString(),
+              read: false,
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       setUploading(false);

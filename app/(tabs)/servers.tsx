@@ -20,9 +20,13 @@ export default function ServersScreen() {
   const [servers, setServers] = useState<Schema['Server']['type'][]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showExploreModal, setShowExploreModal] = useState(false);
+  const [publicServers, setPublicServers] = useState<Schema['Server']['type'][]>([]);
+  const [loadingPublicServers, setLoadingPublicServers] = useState(false);
   const [serverName, setServerName] = useState('');
   const [serverDescription, setServerDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [joiningServerId, setJoiningServerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.email) {
@@ -153,6 +157,57 @@ export default function ServersScreen() {
     }
   }
 
+  async function fetchPublicServers() {
+    try {
+      setLoadingPublicServers(true);
+      const { data: allServers } = await client.models.Server.list();
+
+      // Get user's current memberships
+      const { data: memberships } = await client.models.ServerMember.list();
+      const userServerIds = memberships
+        .filter((m) => m !== null && m.userEmail === user?.email)
+        .map((m) => m.serverId);
+
+      // Filter to public servers that user is not already a member of
+      const availablePublicServers = allServers.filter(
+        (s) => s !== null && s.isPublic === true && !userServerIds.includes(s.id)
+      );
+
+      setPublicServers(availablePublicServers);
+    } catch (error) {
+      console.error('Error fetching public servers:', error);
+      Alert.alert('Error', 'Failed to load public servers');
+    } finally {
+      setLoadingPublicServers(false);
+    }
+  }
+
+  async function handleJoinServer(serverId: string) {
+    setJoiningServerId(serverId);
+    try {
+      // Add user as a member
+      await client.models.ServerMember.create({
+        serverId,
+        userEmail: user?.email || '',
+        joinedAt: new Date().toISOString(),
+      });
+
+      await fetchServers();
+      await fetchPublicServers();
+      Alert.alert('Success', 'You joined the server!');
+    } catch (error) {
+      console.error('Error joining server:', error);
+      Alert.alert('Error', 'Failed to join server');
+    } finally {
+      setJoiningServerId(null);
+    }
+  }
+
+  function handleOpenExploreModal() {
+    setShowExploreModal(true);
+    fetchPublicServers();
+  }
+
   function openServer(serverId: string, serverName: string, ownerEmail: string) {
     router.push({
       pathname: '/server/[serverId]',
@@ -219,12 +274,20 @@ export default function ServersScreen() {
       <View className="pt-2 px-6 pb-4 bg-white border-b border-gray-100">
         <View className="flex-row items-center justify-between mb-1">
           <Text className="text-3xl font-bold text-gray-900">Servers</Text>
-          <TouchableOpacity
-            className="bg-purple-500 px-4 py-2 rounded-xl active:opacity-70"
-            onPress={() => setShowCreateModal(true)}
-          >
-            <Text className="text-white text-sm font-semibold">+ Create</Text>
-          </TouchableOpacity>
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              className="bg-blue-500 px-4 py-2 rounded-xl active:opacity-70"
+              onPress={handleOpenExploreModal}
+            >
+              <Text className="text-white text-sm font-semibold">🔍 Explore</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="bg-purple-500 px-4 py-2 rounded-xl active:opacity-70"
+              onPress={() => setShowCreateModal(true)}
+            >
+              <Text className="text-white text-sm font-semibold">+ Create</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <Text className="text-gray-500 text-sm">
           {servers.length} {servers.length === 1 ? 'server' : 'servers'}
@@ -317,6 +380,88 @@ export default function ServersScreen() {
                 <Text className="text-white text-center text-lg font-bold">Create Server</Text>
               )}
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Explore Servers Modal */}
+      <Modal
+        visible={showExploreModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowExploreModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-6 pb-8" style={{ maxHeight: '80%' }}>
+            <View className="flex-row items-center justify-between mb-6">
+              <Text className="text-2xl font-bold text-gray-900">Explore Servers</Text>
+              <TouchableOpacity
+                className="active:opacity-70"
+                onPress={() => setShowExploreModal(false)}
+              >
+                <Text className="text-gray-500 text-2xl">✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingPublicServers ? (
+              <View className="flex-1 items-center justify-center py-20">
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text className="text-gray-500 mt-4">Loading servers...</Text>
+              </View>
+            ) : publicServers.length === 0 ? (
+              <View className="flex-1 items-center justify-center py-20">
+                <View className="bg-blue-50 w-24 h-24 rounded-full items-center justify-center mb-6">
+                  <Text className="text-5xl">🔍</Text>
+                </View>
+                <Text className="text-gray-900 text-xl font-semibold mb-2">
+                  No public servers
+                </Text>
+                <Text className="text-gray-500 text-center text-base px-8">
+                  There are no public servers to join right now. Check back later!
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={publicServers}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => {
+                  const colors = ['bg-purple-500', 'bg-indigo-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500'];
+                  const colorIndex = item.name.charCodeAt(0) % colors.length;
+                  const isJoining = joiningServerId === item.id;
+
+                  return (
+                    <View className="flex-row items-center bg-gray-50 rounded-2xl p-4 mb-3">
+                      <View className={`w-14 h-14 rounded-2xl ${colors[colorIndex]} items-center justify-center mr-4`}>
+                        <Text className="text-white text-2xl font-bold">
+                          {item.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-gray-900 text-base font-semibold">
+                          {item.name}
+                        </Text>
+                        {item.description && (
+                          <Text className="text-gray-500 text-sm mt-1" numberOfLines={2}>
+                            {item.description}
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity
+                        className={`bg-blue-500 px-4 py-2 rounded-xl ml-2 active:opacity-70 ${isJoining ? 'opacity-60' : ''}`}
+                        onPress={() => handleJoinServer(item.id)}
+                        disabled={isJoining}
+                      >
+                        {isJoining ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text className="text-white text-sm font-semibold">Join</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+              />
+            )}
           </View>
         </View>
       </Modal>

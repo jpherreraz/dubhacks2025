@@ -50,7 +50,8 @@ const schema = a.schema({
       description: a.string(),
       ownerEmail: a.string().required(),
       isGeneral: a.boolean().default(false),
-      createdAt: a.datetime().required(),
+      isPublic: a.boolean().default(false),
+      createdAt: a.datetime(),
     })
     .authorization((allow: any) => [allow.authenticated()]),
 
@@ -69,7 +70,7 @@ const schema = a.schema({
       name: a.string().required(),
       isGeneral: a.boolean().default(false),
       restricted: a.boolean().default(false),
-      createdAt: a.datetime().required(),
+      createdAt: a.datetime(),
       createdBy: a.string(),
     })
     .authorization((allow: any) => [allow.authenticated()]),
@@ -116,5 +117,8 @@ export const data = defineData({
   schema,
   authorizationModes: {
     defaultAuthorizationMode: 'userPool',
+    apiKeyAuthorizationMode: {
+      expiresInDays: 7,
+    },
   },
 });
