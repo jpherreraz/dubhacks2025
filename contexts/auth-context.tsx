@@ -88,12 +88,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signInUser(email: string, password: string): Promise<SignInOutput> {
-    const result = await signIn({
-      username: email,
-      password,
-    });
-    await checkUser();
-    return result;
+    try {
+      console.log('AuthContext: Starting signIn for email:', email);
+      const result = await signIn({
+        username: email,
+        password,
+      });
+      console.log('AuthContext: SignIn successful, result:', {
+        isSignedIn: result.isSignedIn,
+        nextStep: result.nextStep
+      });
+
+      console.log('AuthContext: Checking user after sign in...');
+      await checkUser();
+      console.log('AuthContext: User check completed');
+
+      return result;
+    } catch (error) {
+      console.error('AuthContext: SignIn error:', error);
+      console.error('AuthContext: SignIn error details:', {
+        name: (error as any).name,
+        message: (error as any).message,
+        code: (error as any).code
+      });
+      throw error;
+    }
   }
 
   async function signOutUser(): Promise<void> {

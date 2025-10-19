@@ -18,7 +18,7 @@ export default function ConfirmScreen() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const { confirmSignUpUser, signInUser } = useAuth();
+  const { confirmSignUpUser, signInUser, signOutUser } = useAuth();
 
   async function handleConfirm() {
     if (!code) {
@@ -28,11 +28,62 @@ export default function ConfirmScreen() {
 
     setLoading(true);
     try {
+      console.log('ConfirmScreen: Starting confirmation for email:', email);
       await confirmSignUpUser(email, code);
+      console.log('ConfirmScreen: Email confirmed successfully');
+
       // Auto-login after successful confirmation
-      await signInUser(email, password);
-      router.replace('/(tabs)');
+      console.log('ConfirmScreen: Attempting auto-login for email:', email, 'password available:', !!password);
+      if (!password) {
+        console.error('ConfirmScreen: Password not available for auto-login');
+        Alert.alert('Success', 'Email verified! Please sign in with your credentials.');
+        router.replace('/(auth)/login');
+        return;
+      }
+
+      // Always sign out before attempting auto-login to ensure clean state
+      try {
+        console.log('ConfirmScreen: Signing out any existing session...');
+        await signOutUser();
+        console.log('ConfirmScreen: Sign out successful');
+      } catch (signOutError: any) {
+        console.log('ConfirmScreen: Sign out attempt completed with:', signOutError?.message || 'no error');
+      }
+
+      // Wait a brief moment for sign out to fully complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      try {
+        console.log('ConfirmScreen: Starting sign in...');
+        const signInResult = await signInUser(email, password);
+        console.log('ConfirmScreen: Auto-login successful, result:', signInResult);
+        router.replace('/(tabs)');
+      } catch (signInError: any) {
+        console.error('ConfirmScreen: Sign in error:', signInError);
+
+        // If still getting "already authenticated" error, force sign out again and redirect to login
+        if (signInError.name === 'UserAlreadyAuthenticatedException') {
+          console.log('ConfirmScreen: User already authenticated, forcing sign out and redirecting to login');
+          try {
+            await signOutUser();
+          } catch (e) {
+            console.log('ConfirmScreen: Force sign out completed');
+          }
+          Alert.alert('Success', 'Email verified! Please sign in to continue.');
+          router.replace('/(auth)/login');
+        } else {
+          throw signInError;
+        }
+      }
     } catch (error: any) {
+      console.error('ConfirmScreen: Error during confirmation/login:', error);
+      console.error('ConfirmScreen: Error details:', {
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+
       const errorMessage = error.message || error.toString() || 'Failed to verify email';
       Alert.alert('Verification Error', errorMessage);
     } finally {

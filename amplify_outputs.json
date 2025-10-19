@@ -1,9 +1,9 @@
 {
   "auth": {
-    "user_pool_id": "us-east-1_gDUrKiipi",
+    "user_pool_id": "us-east-1_ta2sRYNqy",
     "aws_region": "us-east-1",
-    "user_pool_client_id": "3u6mha27r71rc2bme24o1fvgk",
-    "identity_pool_id": "us-east-1:4504c74b-32da-4dbe-b647-ce4985213975",
+    "user_pool_client_id": "45ke3nhkhougid9viohb0cupar",
+    "identity_pool_id": "us-east-1:24eae3c0-f2c4-47cb-908f-d9596580e02b",
     "mfa_methods": [],
     "standard_required_attributes": [
       "email"
@@ -26,7 +26,7 @@
     "unauthenticated_identities_enabled": true
   },
   "data": {
-    "url": "https://poabpjnh6fb7npydji7rtrzvqu.appsync-api.us-east-1.amazonaws.com/graphql",
+    "url": "https://rzi66qz7u5euno4oww5647vq6q.appsync-api.us-east-1.amazonaws.com/graphql",
     "aws_region": "us-east-1",
     "default_authorization_type": "AMAZON_COGNITO_USER_POOLS",
     "authorization_types": [
@@ -574,6 +574,13 @@
               "isRequired": true,
               "attributes": []
             },
+            "replyToMessageId": {
+              "name": "replyToMessageId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": false,
+              "attributes": []
+            },
             "updatedAt": {
               "name": "updatedAt",
               "isArray": false,
@@ -585,6 +592,97 @@
           },
           "syncable": true,
           "pluralName": "ServerMessages",
+          "attributes": [
+            {
+              "type": "model",
+              "properties": {}
+            },
+            {
+              "type": "auth",
+              "properties": {
+                "rules": [
+                  {
+                    "allow": "private",
+                    "operations": [
+                      "create",
+                      "update",
+                      "delete",
+                      "read"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "primaryKeyInfo": {
+            "isCustomPrimaryKey": false,
+            "primaryKeyFieldName": "id",
+            "sortKeyFieldNames": []
+          }
+        },
+        "ChannelNotification": {
+          "name": "ChannelNotification",
+          "fields": {
+            "id": {
+              "name": "id",
+              "isArray": false,
+              "type": "ID",
+              "isRequired": true,
+              "attributes": []
+            },
+            "userEmail": {
+              "name": "userEmail",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "channelId": {
+              "name": "channelId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "serverId": {
+              "name": "serverId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "messageId": {
+              "name": "messageId",
+              "isArray": false,
+              "type": "String",
+              "isRequired": true,
+              "attributes": []
+            },
+            "read": {
+              "name": "read",
+              "isArray": false,
+              "type": "Boolean",
+              "isRequired": false,
+              "attributes": []
+            },
+            "createdAt": {
+              "name": "createdAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": true,
+              "attributes": []
+            },
+            "updatedAt": {
+              "name": "updatedAt",
+              "isArray": false,
+              "type": "AWSDateTime",
+              "isRequired": false,
+              "attributes": [],
+              "isReadOnly": true
+            }
+          },
+          "syncable": true,
+          "pluralName": "ChannelNotifications",
           "attributes": [
             {
               "type": "model",

@@ -8,6 +8,7 @@ import {
   Alert,
   Modal,
   TextInput,
+  Platform,
 } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -28,6 +29,7 @@ export default function ChannelManagementScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [channelName, setChannelName] = useState('');
+  const [isRestricted, setIsRestricted] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Schema['Channel']['type'] | null>(null);
   const [processing, setProcessing] = useState(false);
 
@@ -57,11 +59,16 @@ export default function ChannelManagementScreen() {
 
   async function fetchChannels() {
     try {
+      console.log('fetchChannels: Starting fetch for serverId:', serverId);
       setLoading(true);
       const { data: allChannels } = await client.models.Channel.list();
+      console.log('fetchChannels: Total channels in database:', allChannels.length);
+
       const serverChannels = allChannels.filter(
         (ch) => ch !== null && ch.serverId === serverId
       );
+      console.log('fetchChannels: Channels for this server:', serverChannels.length);
+      console.log('fetchChannels: Server channels:', serverChannels.map(ch => ({ id: ch.id, name: ch.name, restricted: ch.restricted })));
 
       // Sort channels with general first
       const sortedChannels = serverChannels.sort((a, b) => {
@@ -70,6 +77,7 @@ export default function ChannelManagementScreen() {
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       });
 
+      console.log('fetchChannels: Setting channels state with', sortedChannels.length, 'channels');
       setChannels(sortedChannels);
     } catch (error) {
       console.error('Error fetching channels:', error);
@@ -79,8 +87,15 @@ export default function ChannelManagementScreen() {
   }
 
   async function handleCreateChannel() {
+    console.log('handleCreateChannel called with name:', channelName, 'restricted:', isRestricted);
+
     if (!channelName.trim()) {
-      Alert.alert('Error', 'Please enter a channel name');
+      console.log('Channel name is empty');
+      if (Platform.OS === 'web') {
+        alert('Please enter a channel name');
+      } else {
+        Alert.alert('Error', 'Please enter a channel name');
+      }
       return;
     }
 
@@ -89,35 +104,96 @@ export default function ChannelManagementScreen() {
       (ch) => ch.name.toLowerCase() === channelName.trim().toLowerCase()
     );
     if (duplicate) {
-      Alert.alert('Error', 'A channel with this name already exists');
+      console.log('Duplicate channel name detected');
+      if (Platform.OS === 'web') {
+        alert('A channel with this name already exists');
+      } else {
+        Alert.alert('Error', 'A channel with this name already exists');
+      }
       return;
     }
 
+    console.log('Starting channel creation...');
     setProcessing(true);
     try {
-      await client.models.Channel.create({
+      const channelData = {
         serverId: serverId,
         name: channelName.trim().toLowerCase().replace(/\s+/g, '-'),
         isGeneral: false,
         createdAt: new Date().toISOString(),
-        createdBy: user?.email || '',
-      });
+      };
+      console.log('Creating channel with data:', channelData);
+      console.log('Restriction will be set in a separate update if needed');
+
+      const result = await client.models.Channel.create(channelData);
+      console.log('Channel create result:', result);
+      console.log('Channel create errors:', result.errors);
+      console.log('Channel created successfully, result data:', result.data);
+
+      // Check if there were any errors
+      if (result.errors && result.errors.length > 0) {
+        console.error('Channel creation returned errors:', result.errors);
+        throw new Error(`Failed to create channel: ${JSON.stringify(result.errors)}`);
+      }
+
+      if (!result.data) {
+        console.error('Channel creation returned no data');
+        throw new Error('Channel creation returned no data');
+      }
+
+      console.log('Channel created with ID:', result.data.id);
+
+      // If restriction was requested, update the channel
+      if (isRestricted) {
+        console.log('Setting channel restriction to true...');
+        try {
+          await client.models.Channel.update({
+            id: result.data.id,
+            restricted: true,
+          });
+          console.log('Channel restriction updated successfully');
+        } catch (updateError) {
+          console.error('Error setting restriction:', updateError);
+          // Don't fail the whole operation if restriction update fails
+        }
+      }
 
       setShowCreateModal(false);
       setChannelName('');
+      setIsRestricted(false);
+
+      console.log('Fetching channels to update list...');
       await fetchChannels();
-      Alert.alert('Success', 'Channel created!');
+      console.log('Channels fetched, current count:', channels.length);
+
+      if (Platform.OS === 'web') {
+        alert('Channel created successfully!');
+      } else {
+        Alert.alert('Success', 'Channel created!');
+      }
     } catch (error) {
       console.error('Error creating channel:', error);
-      Alert.alert('Error', 'Failed to create channel');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+
+      if (Platform.OS === 'web') {
+        alert(`Failed to create channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } else {
+        Alert.alert('Error', 'Failed to create channel');
+      }
     } finally {
       setProcessing(false);
     }
   }
 
   async function handleRenameChannel() {
+    console.log('handleRenameChannel called with name:', channelName);
+
     if (!channelName.trim() || !editingChannel) {
-      Alert.alert('Error', 'Please enter a channel name');
+      if (Platform.OS === 'web') {
+        alert('Please enter a channel name');
+      } else {
+        Alert.alert('Error', 'Please enter a channel name');
+      }
       return;
     }
 
@@ -128,68 +204,168 @@ export default function ChannelManagementScreen() {
         ch.name.toLowerCase() === channelName.trim().toLowerCase()
     );
     if (duplicate) {
-      Alert.alert('Error', 'A channel with this name already exists');
+      if (Platform.OS === 'web') {
+        alert('A channel with this name already exists');
+      } else {
+        Alert.alert('Error', 'A channel with this name already exists');
+      }
       return;
     }
 
     setProcessing(true);
     try {
+      const newName = channelName.trim().toLowerCase().replace(/\s+/g, '-');
+      console.log('Renaming channel', editingChannel.id, 'to', newName);
+
       await client.models.Channel.update({
         id: editingChannel.id,
-        name: channelName.trim().toLowerCase().replace(/\s+/g, '-'),
+        name: newName,
       });
+
+      console.log('Channel renamed successfully');
 
       setShowRenameModal(false);
       setChannelName('');
       setEditingChannel(null);
       await fetchChannels();
-      Alert.alert('Success', 'Channel renamed!');
+
+      if (Platform.OS === 'web') {
+        alert('Channel renamed successfully!');
+      } else {
+        Alert.alert('Success', 'Channel renamed!');
+      }
     } catch (error) {
       console.error('Error renaming channel:', error);
-      Alert.alert('Error', 'Failed to rename channel');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+
+      if (Platform.OS === 'web') {
+        alert(`Failed to rename channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } else {
+        Alert.alert('Error', 'Failed to rename channel');
+      }
     } finally {
       setProcessing(false);
     }
   }
 
   async function handleDeleteChannel(channel: Schema['Channel']['type']) {
+    console.log('handleDeleteChannel called for channel:', channel.name, channel.id);
+
     if (channel.isGeneral) {
+      console.log('Cannot delete general channel');
       Alert.alert('Error', 'Cannot delete the general channel');
       return;
     }
 
-    Alert.alert(
-      'Delete Channel',
-      `Are you sure you want to delete #${channel.name}? All messages in this channel will be lost.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete all messages in the channel first
-              const { data: allMessages } = await client.models.ServerMessage.list();
-              const channelMessages = allMessages.filter(
-                (msg) => msg !== null && msg.channelId === channel.id
-              );
+    console.log('Showing confirmation dialog...');
 
-              for (const message of channelMessages) {
-                await client.models.ServerMessage.delete({ id: message.id });
+    // Use window.confirm for web, Alert.alert for native
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete #${channel.name}? All messages in this channel will be lost.`
+      );
+
+      if (!confirmed) {
+        console.log('Delete cancelled by user');
+        return;
+      }
+
+      console.log('Delete confirmed, proceeding...');
+
+      try {
+        console.log('Deleting channel:', channel.id, channel.name);
+
+        // Delete all notifications for this channel first
+        console.log('Fetching notifications...');
+        const { data: allNotifications } = await client.models.ChannelNotification.list();
+        const channelNotifications = allNotifications.filter(
+          (notif) => notif !== null && notif.channelId === channel.id
+        );
+        console.log(`Found ${channelNotifications.length} notifications to delete`);
+
+        for (const notification of channelNotifications) {
+          await client.models.ChannelNotification.delete({ id: notification.id });
+        }
+
+        // Delete all messages in the channel
+        console.log('Fetching messages...');
+        const { data: allMessages } = await client.models.ServerMessage.list();
+        const channelMessages = allMessages.filter(
+          (msg) => msg !== null && msg.channelId === channel.id
+        );
+        console.log(`Found ${channelMessages.length} messages to delete`);
+
+        for (const message of channelMessages) {
+          await client.models.ServerMessage.delete({ id: message.id });
+        }
+
+        // Delete the channel
+        console.log('Deleting channel...');
+        await client.models.Channel.delete({ id: channel.id });
+        console.log('Channel deleted successfully');
+
+        await fetchChannels();
+        alert('Channel deleted successfully!');
+      } catch (error) {
+        console.error('Error deleting channel:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        alert(`Failed to delete channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Native platform - use Alert.alert
+      Alert.alert(
+        'Delete Channel',
+        `Are you sure you want to delete #${channel.name}? All messages in this channel will be lost.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log('Deleting channel:', channel.id, channel.name);
+
+                // Delete all notifications for this channel first
+                console.log('Fetching notifications...');
+                const { data: allNotifications } = await client.models.ChannelNotification.list();
+                const channelNotifications = allNotifications.filter(
+                  (notif) => notif !== null && notif.channelId === channel.id
+                );
+                console.log(`Found ${channelNotifications.length} notifications to delete`);
+
+                for (const notification of channelNotifications) {
+                  await client.models.ChannelNotification.delete({ id: notification.id });
+                }
+
+                // Delete all messages in the channel
+                console.log('Fetching messages...');
+                const { data: allMessages } = await client.models.ServerMessage.list();
+                const channelMessages = allMessages.filter(
+                  (msg) => msg !== null && msg.channelId === channel.id
+                );
+                console.log(`Found ${channelMessages.length} messages to delete`);
+
+                for (const message of channelMessages) {
+                  await client.models.ServerMessage.delete({ id: message.id });
+                }
+
+                // Delete the channel
+                console.log('Deleting channel...');
+                await client.models.Channel.delete({ id: channel.id });
+                console.log('Channel deleted successfully');
+
+                await fetchChannels();
+                Alert.alert('Success', 'Channel deleted');
+              } catch (error) {
+                console.error('Error deleting channel:', error);
+                console.error('Error details:', JSON.stringify(error, null, 2));
+                Alert.alert('Error', `Failed to delete channel: ${error instanceof Error ? error.message : 'Unknown error'}`);
               }
-
-              // Delete the channel
-              await client.models.Channel.delete({ id: channel.id });
-              await fetchChannels();
-              Alert.alert('Success', 'Channel deleted');
-            } catch (error) {
-              console.error('Error deleting channel:', error);
-              Alert.alert('Error', 'Failed to delete channel');
-            }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   }
 
   function openRenameModal(channel: Schema['Channel']['type']) {
@@ -199,6 +375,8 @@ export default function ChannelManagementScreen() {
   }
 
   function renderChannel({ item }: { item: Schema['Channel']['type'] }) {
+    const isRestricted = item.restricted ?? false;
+
     return (
       <View className="bg-white rounded-2xl p-4 mb-3 shadow-sm">
         <View className="flex-row items-center mb-2">
@@ -209,6 +387,11 @@ export default function ChannelManagementScreen() {
             {item.isGeneral && (
               <View className="bg-blue-100 px-2 py-0.5 rounded-md">
                 <Text className="text-blue-700 text-xs font-semibold">General</Text>
+              </View>
+            )}
+            {isRestricted && (
+              <View className="bg-orange-100 px-2 py-0.5 rounded-md">
+                <Text className="text-orange-700 text-xs font-semibold">🔒 Restricted</Text>
               </View>
             )}
           </View>
@@ -341,7 +524,11 @@ export default function ChannelManagementScreen() {
               <Text className="text-2xl font-bold text-gray-900">Create Channel</Text>
               <TouchableOpacity
                 className="active:opacity-70"
-                onPress={() => setShowCreateModal(false)}
+                onPress={() => {
+                  setShowCreateModal(false);
+                  setChannelName('');
+                  setIsRestricted(false);
+                }}
               >
                 <Text className="text-gray-500 text-2xl">✕</Text>
               </TouchableOpacity>
@@ -365,6 +552,32 @@ export default function ChannelManagementScreen() {
                 Use lowercase letters, numbers, and dashes
               </Text>
             </View>
+
+            <TouchableOpacity
+              className="flex-row items-center justify-between p-4 bg-gray-50 rounded-2xl mb-6 active:opacity-70"
+              onPress={() => setIsRestricted(!isRestricted)}
+              disabled={processing}
+            >
+              <View className="flex-1 mr-4">
+                <Text className="text-gray-900 text-base font-semibold mb-1">
+                  Restrict Channel
+                </Text>
+                <Text className="text-gray-500 text-xs">
+                  Only admins and the owner can send messages
+                </Text>
+              </View>
+              <View
+                className={`w-12 h-7 rounded-full ${
+                  isRestricted ? 'bg-orange-500' : 'bg-gray-300'
+                } p-1`}
+              >
+                <View
+                  className={`w-5 h-5 rounded-full bg-white ${
+                    isRestricted ? 'ml-auto' : 'ml-0'
+                  }`}
+                />
+              </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
               className={`bg-green-500 py-5 rounded-2xl shadow-lg active:opacity-80 ${

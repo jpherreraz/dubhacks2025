@@ -54,6 +54,7 @@ const schema = a.schema({
       serverId: a.string().required(),
       name: a.string().required(),
       isGeneral: a.boolean().default(false),
+      restricted: a.boolean().default(false),
       createdAt: a.datetime().required(),
       createdBy: a.string(),
     })
@@ -65,6 +66,18 @@ const schema = a.schema({
       channelId: a.string().required(),
       senderEmail: a.string().required(),
       content: a.string().required(),
+      createdAt: a.datetime().required(),
+      replyToMessageId: a.string(),
+    })
+    .authorization((allow: any) => [allow.authenticated()]),
+
+  ChannelNotification: a
+    .model({
+      userEmail: a.string().required(),
+      channelId: a.string().required(),
+      serverId: a.string().required(),
+      messageId: a.string().required(),
+      read: a.boolean().default(false),
       createdAt: a.datetime().required(),
     })
     .authorization((allow: any) => [allow.authenticated()]),
