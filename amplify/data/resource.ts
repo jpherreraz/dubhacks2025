@@ -80,8 +80,21 @@ const schema = a.schema({
       channelId: a.string().required(),
       senderEmail: a.string().required(),
       content: a.string().required(),
+      fileUrl: a.string(),
+      filePath: a.string(),
+      fileName: a.string(),
+      fileType: a.string(),
       createdAt: a.datetime().required(),
       replyToMessageId: a.string(),
+    })
+    .authorization((allow: any) => [allow.authenticated()]),
+
+  ServerReaction: a
+    .model({
+      messageId: a.string().required(),
+      userEmail: a.string().required(),
+      emoji: a.string().required(),
+      createdAt: a.datetime().required(),
     })
     .authorization((allow: any) => [allow.authenticated()]),
 
