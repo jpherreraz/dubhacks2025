@@ -8,7 +8,7 @@ const schema = a.schema({
       status: a.enum(['PENDING', 'ACCEPTED', 'REJECTED']),
       createdAt: a.datetime().required(),
     })
-    .authorization((allow) => [
+    .authorization((allow: any) => [
       allow.authenticated(),
     ]),
 
@@ -18,7 +18,7 @@ const schema = a.schema({
       friendEmail: a.string().required(),
       addedAt: a.datetime().required(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 
   Message: a
     .model({
@@ -28,7 +28,7 @@ const schema = a.schema({
       createdAt: a.datetime().required(),
       read: a.boolean().default(false),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 
   Server: a
     .model({
@@ -38,7 +38,7 @@ const schema = a.schema({
       isGeneral: a.boolean().default(false),
       createdAt: a.datetime().required(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 
   ServerMember: a
     .model({
@@ -47,7 +47,7 @@ const schema = a.schema({
       joinedAt: a.datetime().required(),
       isAdmin: a.boolean().default(false),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 
   Channel: a
     .model({
@@ -57,7 +57,7 @@ const schema = a.schema({
       createdAt: a.datetime().required(),
       createdBy: a.string(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 
   ServerMessage: a
     .model({
@@ -67,7 +67,7 @@ const schema = a.schema({
       content: a.string().required(),
       createdAt: a.datetime().required(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow: any) => [allow.authenticated()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
